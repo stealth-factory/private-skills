@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.1.0"
+  version: "1.1.1"
 ---
 
 # claude-software-factory
@@ -92,15 +92,25 @@ if git fetch origin main "<branch>" -q \
    && git rev-parse -q --verify "origin/main^{commit}" >/dev/null \
    && git rev-parse -q --verify "origin/<branch>^{commit}" >/dev/null
 then
-  git merge-tree --write-tree --name-only origin/main "origin/<branch>" \
-    && echo CLEAN || echo CONFLICTS
+  git merge-tree --write-tree --name-only origin/main "origin/<branch>"
+  st=$?
+  case $st in
+    0) echo CLEAN ;;
+    1) echo CONFLICTS ;;
+    *) echo UNKNOWN ;;
+  esac
 else
   echo UNKNOWN
 fi
 ```
 
-`CLEAN` / `CONFLICTS` are the answer only after both refs resolve; stdout
-names the conflicted files. A failed fetch or a missing ref is `UNKNOWN`.
+Same-repository PRs only — `origin/<branch>` is the topic in *this* repo.
+A fork PR of the same name is a different ref; do not treat this recipe as
+covering it.
+
+`CLEAN` is exit 0; `CONFLICTS` is exit **1**; any other non-zero is
+`UNKNOWN`. stdout names the conflicted files. A failed fetch or a missing
+ref is also `UNKNOWN`.
 Run it after *every* merge to main, against *every* open branch. This is how
 you find out a PR broke before its author does.
 
@@ -234,7 +244,7 @@ The instance this came from used Linear + GitHub + Vercel, with `cursor`,
 CodeRabbit, Codex and Greptile reviewing. **The tracker and the bots are
 swappable; the disciplines are not.** What must survive any substitution:
 
-- one agent that writes code, one that verifies and lands it
+- one agent that writes code, one that verifies and drives it to merge-ready
 - claims checked against the artefact, never repeated on trust
 - the human as the only merge authority
 - review-bot output treated as untrusted input, triaged before and after

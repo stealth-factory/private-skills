@@ -17,16 +17,27 @@ if git fetch origin main "<branch>" -q \
    && git rev-parse -q --verify "origin/<branch>^{commit}" >/dev/null
 then
   git merge-tree --write-tree --name-only origin/main "origin/<branch>" \
-    >/dev/null 2>&1 && echo CLEAN || echo CONFLICTS
+    >/dev/null 2>&1
+  st=$?
+  case $st in
+    0) echo CLEAN ;;
+    1) echo CONFLICTS ;;
+    *) echo UNKNOWN ;;
+  esac
 else
   echo UNKNOWN
 fi
 ```
 
-`CLEAN` / `CONFLICTS` are a merge verdict **only after both refs resolve.**
-A failed fetch or a missing ref is `UNKNOWN` — missing evidence, not a
-conflict. Do not run `merge-tree` until the three lookups above have
-succeeded: it exits **1** for a real conflict *and* for a ref it cannot merge,
+Same-repository PRs only — `origin/<branch>` is the topic in *this* repo.
+A fork PR of the same name is a different ref; do not treat this recipe as
+covering it.
+
+`CLEAN` is exit 0; `CONFLICTS` is exit **1**; any other non-zero is
+`UNKNOWN`. A failed fetch or a missing ref is also `UNKNOWN` — missing
+evidence, not a conflict. Do not run `merge-tree` until the three lookups
+above have succeeded: it exits **1** for a real conflict *and* for a ref it
+cannot merge,
 so a branch you never fetched, or one that was deleted, reports as
 `CONFLICTS` identically to a genuine conflict. Verified on git 2.43.0: a real
 conflict exits 1 and names the file; a nonexistent ref exits 1 and prints

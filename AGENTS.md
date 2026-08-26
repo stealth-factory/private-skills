@@ -176,19 +176,28 @@ links; once tracked, git keeps tracking them:
 # Categorised:      skills/<category>/<name>/SKILL.md
 # skills/*/ matches the category in the second form, so a basename-only
 # loop would link the category and miss the skill.
+# ln -sfn will not replace a real directory (and on GNU ln may exit 0
+# while creating a link *inside* it). Remove only a non-symlink directory.
+link_skill() {
+  dest="$1" target="$2"
+  if [ -d "$dest" ] && [ ! -L "$dest" ]; then
+    rm -rf "$dest"
+  fi
+  ln -sfn "$target" "$dest"
+}
 for d in skills/*/; do
   if [ -f "${d}SKILL.md" ]; then
     n=$(basename "$d")
-    ln -sfn "../../skills/$n" ".claude/skills/$n"
-    ln -sfn "../../skills/$n" ".agents/skills/$n"
+    link_skill ".claude/skills/$n" "../../skills/$n"
+    link_skill ".agents/skills/$n" "../../skills/$n"
     git add -f ".claude/skills/$n" ".agents/skills/$n"
   else
     for sd in "$d"*/; do
       [ -f "${sd}SKILL.md" ] || continue
       n=$(basename "$sd")
       cat=$(basename "$d")
-      ln -sfn "../../skills/$cat/$n" ".claude/skills/$n"
-      ln -sfn "../../skills/$cat/$n" ".agents/skills/$n"
+      link_skill ".claude/skills/$n" "../../skills/$cat/$n"
+      link_skill ".agents/skills/$n" "../../skills/$cat/$n"
       git add -f ".claude/skills/$n" ".agents/skills/$n"
     done
   fi

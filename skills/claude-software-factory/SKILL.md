@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # claude-software-factory
@@ -18,7 +18,7 @@ runs.
 
 ## The shape
 
-```
+```text
 human ──▶ PM agent ──messages──▶ developer agent ──▶ subagents
              │                          │
              │ opens PRs                │ pushes branches
@@ -53,8 +53,9 @@ and its P1 is still displayed as open. Relaying it wastes a cycle and costs you
 credibility the next time you flag something real.
 
 ```bash
-# a finding says X is broken at file:line — check HEAD, not the finding
-git show origin/<branch>:<file> | sed -n '<line-20>,<line+20>p'
+# a finding cites file:line at <reviewed_sha> — check that SHA and HEAD
+git show <reviewed_sha>:<file> | sed -n '<line-20>,<line+20>p'   # what the bot saw
+git show HEAD:<file>           | sed -n '<line-20>,<line+20>p'   # what is true now
 ```
 
 In one working session this caught stale "open" findings on five separate PRs,
@@ -87,20 +88,28 @@ GitHub's `mergeable` goes `UNKNOWN` while it recomputes and lies for minutes
 after a merge. Use git:
 
 ```bash
-git rev-parse -q --verify "origin/<branch>^{commit}" >/dev/null   # is the ref really there?
-git merge-tree --write-tree --name-only origin/main origin/<branch> \
-  && echo CLEAN || echo CONFLICTS
+if git fetch origin main "<branch>" -q \
+   && git rev-parse -q --verify "origin/main^{commit}" >/dev/null \
+   && git rev-parse -q --verify "origin/<branch>^{commit}" >/dev/null
+then
+  git merge-tree --write-tree --name-only origin/main "origin/<branch>" \
+    && echo CLEAN || echo CONFLICTS
+else
+  echo UNKNOWN
+fi
 ```
 
-Exit status is the answer; stdout names the conflicted files. Run it after
-*every* merge to main, against *every* open branch. This is how you find out a
-PR broke before its author does.
+`CLEAN` / `CONFLICTS` are the answer only after both refs resolve; stdout
+names the conflicted files. A failed fetch or a missing ref is `UNKNOWN`.
+Run it after *every* merge to main, against *every* open branch. This is how
+you find out a PR broke before its author does.
 
-**Resolve the ref first, and read that lookup on its own.** `merge-tree` exits
-**1** for a real conflict *and* for a ref it cannot merge, so a branch you never
-fetched — or one that was deleted — reports `CONFLICTS` identically to a genuine
-conflict (verified on git 2.43.0). A failed lookup is unknown, not a conflict.
-Same trap, more of it, in `reference/git-traps.md`.
+**Do not run `merge-tree` until the lookups succeed.** It exits **1** for a
+real conflict *and* for a ref it cannot merge, so a branch you never fetched
+— or one that was deleted — reports `CONFLICTS` identically to a genuine
+conflict (verified on git 2.43.0). Fetch both `main` and the topic: fetching
+only the branch leaves `origin/main` stale and can report `CLEAN` against a
+pre-merge base. Same trap, more of it, in `reference/git-traps.md`.
 
 The older three-argument `git merge-tree base a b` under-reports — it will print
 "changed in both" with zero conflict markers for a case the real merge refuses.
@@ -217,7 +226,7 @@ own skills, and this skill defers to them rather than restating them:
 
 Those are separate installable skills, referenced **by name, not by path** — a
 consumer who installs only this one will not have them on disk. Install the set
-with `npx skills add stealth-factory/skills`.
+with `npx skills@1.5.23 add stealth-factory/skills`.
 
 ## Adapting this
 

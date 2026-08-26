@@ -25,20 +25,21 @@ machine installing it needs access:
 gh auth setup-git                                   # once, so git can clone over HTTPS
 
 # Interactive — pick which skills (and which agents) to install:
-npx skills add stealth-factory/private-skills
+npx skills@1.5.23 add stealth-factory/private-skills
 
 # Or point at SSH directly, no gh setup needed:
-npx skills add git@github.com:stealth-factory/private-skills.git
+npx skills@1.5.23 add git@github.com:stealth-factory/private-skills.git
 
 # A specific skill:
-npx skills add stealth-factory/private-skills --skill claude-software-factory
+npx skills@1.5.23 add stealth-factory/private-skills --skill claude-software-factory
 
 # Everything, globally (available in every project):
-npx skills add stealth-factory/private-skills --all -g
+npx skills@1.5.23 add stealth-factory/private-skills --all -g
 ```
 
-Manage installed skills with `npx skills list`, `npx skills update`, and
-`npx skills remove`.
+Pin `@1.5.23` — flag behaviour in [`AGENTS.md`](./AGENTS.md) was verified
+against that release. Manage installed skills with `npx skills@1.5.23 list`,
+`npx skills@1.5.23 update`, and `npx skills@1.5.23 remove`.
 
 > Private repos are **not** indexed by skills.sh search or the leaderboard. That
 > is the trade: shareable with the team, not publicly discoverable.
@@ -55,7 +56,7 @@ The public skills are installed here, and this repo's own skills are symlinked
 into the agent-discovery directories, so both sets are live:
 
 ```bash
-npx skills add stealth-factory/skills -s '*' -a claude-code codex -y   # public set
+npx skills@1.5.23 add stealth-factory/skills -s '*' -a claude-code codex -y   # public set
 ```
 
 See [`AGENTS.md`](./AGENTS.md) for the authoring conventions, the relink loop, what
@@ -63,7 +64,7 @@ belongs in this repo rather than the public one, and the branching/PR workflow.
 
 ## Repository layout
 
-```
+```text
 skills/
   <skill-name>/
     SKILL.md         # entry: frontmatter (name + description) + the skill body
@@ -78,7 +79,7 @@ skills-lock.json     # which public skills are installed here (the copies are gi
 ## Adding a skill
 
 ```bash
-npx skills init skills/<skill-name>   # scaffolds skills/<skill-name>/SKILL.md
+npx skills@1.5.23 init skills/<skill-name>   # scaffolds skills/<skill-name>/SKILL.md
 ```
 
 Then fill in the frontmatter + body, re-run the relink loop from

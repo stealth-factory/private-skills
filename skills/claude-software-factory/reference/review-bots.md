@@ -11,7 +11,7 @@ Post a triage comment when you flip the PR ready — before findings exist. This
 is the single highest-leverage habit in the loop: it stops a review pass
 quietly reverting a decision that took an hour to reach.
 
-```
+```text
 @cursor /babysit
 
 <one line: what this PR is>
@@ -41,8 +41,11 @@ a secure context. Say so and it will check.
 A finding cites a file and line **from the SHA it reviewed**. Branches move.
 
 ```bash
-git log --oneline origin/main..origin/<branch>     # what landed since
-git show origin/<branch>:<file> | sed -n '<a>,<b>p'
+# The finding cites file:line at <reviewed_sha>. origin/main..<branch>
+# includes unrelated commits and a different file state.
+git log --oneline <reviewed_sha>..HEAD                 # what landed since the review
+git show <reviewed_sha>:<file> | sed -n '<a>,<b>p'     # the state the bot saw
+git show HEAD:<file>           | sed -n '<a>,<b>p'     # the state now
 ```
 
 Three outcomes:
@@ -113,7 +116,7 @@ parsed.
 When a PR is done, post one comment and stop. It should let the human merge
 without opening anything else.
 
-```
+```text
 @<human> this is ready to squash-merge.
 
 **HEAD** `<sha>` — <mergeable state>, <checks>, <reviews>, **no unresolved
@@ -140,12 +143,25 @@ not offer the next issue in the same breath.
 The UI's unresolved count includes outdated threads. Filter both:
 
 ```bash
-gh api graphql -f query='
-{ repository(owner:"OWNER", name:"REPO") {
-    pullRequest(number:N) { reviewThreads(last:60) { nodes {
-      isResolved isOutdated path comments(first:1){nodes{author{login} body}}
-    } } }
-} }' --jq '.data.repository.pullRequest.reviewThreads.nodes[]
-           | select(.isResolved==false and .isOutdated==false)
-           | "\(.comments.nodes[0].author.login) [\(.path)]: \(.comments.nodes[0].body[0:200])"'
+# Paginate every page. last:60 hides older unresolved threads, so a
+# merge-ready note can report "none" while one remains.
+# gh api graphql --paginate requires $endCursor and pageInfo{hasNextPage,endCursor}.
+# Do not pass --slurp with --jq — on gh 2.91.0 that combination is rejected
+# (verified). --jq runs per page; that is enough. Detect your version.
+gh api graphql --paginate -f query='
+query($endCursor: String) {
+  repository(owner:"OWNER", name:"REPO") {
+    pullRequest(number:N) {
+      reviewThreads(first:100, after:$endCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          isResolved isOutdated path
+          comments(first:1){nodes{author{login} body}}
+        }
+      }
+    }
+  }
+}' --jq '.data.repository.pullRequest.reviewThreads.nodes[]
+         | select(.isResolved==false and .isOutdated==false)
+         | "\(.comments.nodes[0].author.login) [\(.path)]: \(.comments.nodes[0].body[0:200])"'
 ```

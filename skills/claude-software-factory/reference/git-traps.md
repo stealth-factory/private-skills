@@ -10,20 +10,29 @@ stale for minutes after a merge lands. Branches that will conflict show
 `MERGEABLE`; branches that are fine show `CONFLICTING`.
 
 ```bash
-git fetch origin "<branch>" -q                                    # check this status
-git rev-parse -q --verify "origin/<branch>^{commit}" >/dev/null   # and this one
-git merge-tree --write-tree --name-only origin/main origin/<branch> \
-  >/dev/null 2>&1 && echo CLEAN || echo CONFLICTS
+# Fetch the base AND the topic. Fetching only <branch> leaves origin/main
+# stale and can report CLEAN against a pre-merge base.
+if git fetch origin main "<branch>" -q \
+   && git rev-parse -q --verify "origin/main^{commit}" >/dev/null \
+   && git rev-parse -q --verify "origin/<branch>^{commit}" >/dev/null
+then
+  git merge-tree --write-tree --name-only origin/main "origin/<branch>" \
+    >/dev/null 2>&1 && echo CLEAN || echo CONFLICTS
+else
+  echo UNKNOWN
+fi
 ```
 
-Exit status is the verdict — **but only once you know both refs resolve.**
-`merge-tree` exits **1** for a real conflict *and* for a ref it cannot merge, so
-a branch you never fetched, or one that was deleted, reports as `CONFLICTS`
-identically to a genuine conflict. Verified on git 2.43.0: a real conflict exits
-1 and names the file; a nonexistent ref exits 1 and prints
+`CLEAN` / `CONFLICTS` are a merge verdict **only after both refs resolve.**
+A failed fetch or a missing ref is `UNKNOWN` — missing evidence, not a
+conflict. Do not run `merge-tree` until the three lookups above have
+succeeded: it exits **1** for a real conflict *and* for a ref it cannot merge,
+so a branch you never fetched, or one that was deleted, reports as
+`CONFLICTS` identically to a genuine conflict. Verified on git 2.43.0: a real
+conflict exits 1 and names the file; a nonexistent ref exits 1 and prints
 `not something we can merge`. The exit status alone cannot tell them apart —
-that is why the two lookups above come first and are read on their own. Drop the
-redirect to see which files conflict (or which ref failed).
+that is why the lookups are in the `if` and `merge-tree` is only in the
+`then`. Drop the redirect to see which files conflict.
 
 **Do not use the older three-argument form** — `git merge-tree <base> <a> <b>`
 does a trivial merge and prints `changed in both` for files touched on both
@@ -31,7 +40,7 @@ sides *without* conflicting. Counting those as conflicts gives false alarms;
 counting conflict markers misses real ones. One session had this report zero
 markers on a branch the real merge refused.
 
-Sweep every open PR after every merge — running the three steps above per
+Sweep every open PR after every merge — running the guarded recipe above per
 branch, and **testing every lookup on its own**. Do not wrap it in the obvious
 one-liner:
 
@@ -45,7 +54,20 @@ nothing. That is indistinguishable from "every branch is clean", which is the
 one answer you must never get wrong here. The same applies to each branch-name
 lookup and each fetch inside the loop: a failure is missing evidence, not a
 clean branch. Capture the PR list first, confirm it is non-empty and plausible,
-then iterate.
+then iterate. `gh pr list` also defaults to `--limit 30` and is silent about
+the remainder — a sweep of 31 open PRs that never asked for more will claim
+to have checked every branch while skipping PR 31 onward.
+
+```bash
+if prs=$(gh pr list --state open --limit 1000 --json number,headRefName); then
+  count=$(printf '%s\n' "$prs" | jq 'length')
+  # empty can be real (no open PRs) or a surprise — confirm against the UI
+  # 1000 means you hit the cap you asked for: paginate, do not treat as done
+  [ "$count" -eq 1000 ] && echo UNKNOWN: hit --limit cap
+else
+  echo UNKNOWN: gh pr list failed
+fi
+```
 
 ## 2. Squash-merge + stacked PR + auto-delete
 

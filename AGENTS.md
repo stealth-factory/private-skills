@@ -31,7 +31,7 @@ machine that installs from it.
 
 ## Layout
 
-```
+```text
 skills/<skill-name>/SKILL.md              # flat (preferred)
 skills/<category>/<skill-name>/SKILL.md   # only if you have enough to categorise
 ```
@@ -92,7 +92,7 @@ thing the agent has to choose between them.
 
 A skill is a **directory**, not just `SKILL.md`:
 
-```
+```text
 skills/<skill-name>/
   SKILL.md          # entry: frontmatter + concise body
   reference/*.md    # optional — deep detail, read on demand
@@ -108,7 +108,7 @@ working. Small skills are fine as a single `SKILL.md`.
 ## Adding a skill
 
 ```bash
-npx skills init skills/<skill-name>   # scaffolds the folder + SKILL.md
+npx skills@1.5.23 init skills/<skill-name>   # scaffolds the folder + SKILL.md
 ```
 
 Then fill in the frontmatter + body, **re-run the relink loop below**, add a row
@@ -120,8 +120,11 @@ The public set is installed into this repo with the `skills` CLI, so both halves
 are available to any agent working in this tree:
 
 ```bash
-npx skills add stealth-factory/skills -s '*' -a claude-code codex -y
+npx skills@1.5.23 add stealth-factory/skills -s '*' -a claude-code codex -y
 ```
+
+Pin `@1.5.23` — that is the version the flag behaviour below was verified
+against. An unpinned `npx skills` can run a different registry release.
 
 **`-s` and `-a` are variadic** — pass values space-separated, or repeat the flag.
 **A comma-separated list breaks both**, verified on `skills` v1.5.23:
@@ -142,7 +145,8 @@ is named `claude-code`, not `claude`.)
 `--all` (= `--skill '*' --agent '*' -y`) also works, but installs to ~19 agents
 and leaves a second full copy of every skill under a **non-hidden, top-level
 `agent/`** directory — easy to sweep into a commit with `git add -A`, and
-`npx skills remove --all` leaves the empty directories behind.
+`npx skills@1.5.23 remove --all` leaves the empty directories behind. `.gitignore`
+covers `/agent/` so a later `git add -A` cannot vendor it.
 
 That writes real copies into `.agents/skills/<name>/`, symlinks
 `.claude/skills/<name>` at them, and records the set in `skills-lock.json`.
@@ -152,7 +156,7 @@ That writes real copies into `.agents/skills/<name>/`, symlinks
 - **The installed copies are ignored, never committed.** Vendoring them would
   fork the public repo silently: the copies go stale and become
   indistinguishable from genuinely private skills. Re-run the `add` command above
-  to restore or refresh them. (`npx skills experimental_install` claims to
+  to restore or refresh them. (`npx skills@1.5.23 experimental_install` claims to
   restore from `skills-lock.json` — it is flagged experimental by the CLI itself
   and has not been verified here; the `add` command is the reliable path.)
 
@@ -168,18 +172,35 @@ ignores their contents wholesale. So the relink loop **force-adds** our own
 links; once tracked, git keeps tracking them:
 
 ```bash
-for d in skills/*/; do n=$(basename "$d"); \
-  ln -sfn "../../skills/$n" ".claude/skills/$n"; \
-  ln -sfn "../../skills/$n" ".agents/skills/$n"; \
-  git add -f ".claude/skills/$n" ".agents/skills/$n"; done
+# Flat (preferred): skills/<name>/SKILL.md
+# Categorised:      skills/<category>/<name>/SKILL.md
+# skills/*/ matches the category in the second form, so a basename-only
+# loop would link the category and miss the skill.
+for d in skills/*/; do
+  if [ -f "${d}SKILL.md" ]; then
+    n=$(basename "$d")
+    ln -sfn "../../skills/$n" ".claude/skills/$n"
+    ln -sfn "../../skills/$n" ".agents/skills/$n"
+    git add -f ".claude/skills/$n" ".agents/skills/$n"
+  else
+    for sd in "$d"*/; do
+      [ -f "${sd}SKILL.md" ] || continue
+      n=$(basename "$sd")
+      cat=$(basename "$d")
+      ln -sfn "../../skills/$cat/$n" ".claude/skills/$n"
+      ln -sfn "../../skills/$cat/$n" ".agents/skills/$n"
+      git add -f ".claude/skills/$n" ".agents/skills/$n"
+    done
+  fi
+done
 ```
 
 Run it whenever you add a skill. Nothing else in those two directories should
 ever be committed.
 
-> `npx skills remove --all` only removes what `skills-lock.json` tracks, so it
-> leaves these links alone — but it is worth re-running the loop after any CLI
-> operation on those directories.
+> `npx skills@1.5.23 remove --all` only removes what `skills-lock.json` tracks,
+> so it leaves these links alone — but it is worth re-running the loop after any
+> CLI operation on those directories.
 
 ## Consuming this repo elsewhere
 
@@ -188,8 +209,8 @@ machine is authed to clone it:
 
 ```bash
 gh auth setup-git                                        # once, for HTTPS
-npx skills add stealth-factory/private-skills            # then this works
-npx skills add git@github.com:stealth-factory/private-skills.git   # or SSH directly
+npx skills@1.5.23 add stealth-factory/private-skills            # then this works
+npx skills@1.5.23 add git@github.com:stealth-factory/private-skills.git   # or SSH directly
 ```
 
 Private repos are not indexed by skills.sh search or the leaderboard. That is

@@ -6,7 +6,7 @@ the text.
 
 ## Assigning work
 
-```
+```text
 **Take <ISSUE-ID>.** <One line on why it is unblocked — and say you checked.>
 
 <State of the tree: what main is at, what else is open, and whether anything
@@ -51,7 +51,7 @@ Verify first, then reply. The reply is where the learning lands.
 
 An idle agent invents work, and invented work collides. Be explicit:
 
-```
+```text
 **Stand down. Nothing is assigned, and that is deliberate.**
 
 <What is in flight and who has it.>
@@ -72,7 +72,7 @@ where goes stale fast, and a stale model is how two agents start the same work.
 When a finding is a design question rather than a fix, do not decide it
 yourself if they own the design. Hand it over with your read attached:
 
-```
+```text
 Pulling you in on **<PR>** — this is a design question, not mechanical.
 
 <The finding(s), stated fairly, including the strongest version of each side.>

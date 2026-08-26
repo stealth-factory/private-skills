@@ -37,9 +37,8 @@ covering it.
 `UNKNOWN`. A failed fetch or a missing ref is also `UNKNOWN` — missing
 evidence, not a conflict. Do not run `merge-tree` until the three lookups
 above have succeeded: it exits **1** for a real conflict *and* for a ref it
-cannot merge,
-so a branch you never fetched, or one that was deleted, reports as
-`CONFLICTS` identically to a genuine conflict. Verified on git 2.43.0: a real
+cannot merge, so a branch you never fetched, or one that was deleted,
+reports as `CONFLICTS` identically to a genuine conflict. Verified on git 2.43.0: a real
 conflict exits 1 and names the file; a nonexistent ref exits 1 and prints
 `not something we can merge`. The exit status alone cannot tell them apart —
 that is why the lookups are in the `if` and `merge-tree` is only in the

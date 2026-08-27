@@ -1,0 +1,25 @@
+.DS_Store
+node_modules/
+*.log
+
+# Credential-bearing env files. `.env*` does not match `env.production`
+# (see skills/claude-software-factory/reference/git-traps.md §5).
+.env*
+env.production
+
+# git worktrees created under .claude/
+.claude/worktrees/
+
+# Public skills installed with the `skills` CLI — working copies, restored with
+# `npx skills@1.5.23 add stealth-factory/skills` (see AGENTS.md). Never vendored
+# into git: committed copies fork the public repo silently and go stale.
+#
+# This repo's OWN skill symlinks live in these same two directories and ARE
+# tracked — the relink loop in AGENTS.md force-adds them (`git add -f`), and git
+# keeps tracking a file once added regardless of these rules.
+/.agents/skills/*
+/.claude/skills/*
+
+# `npx skills add --all` also writes a second full copy under a non-hidden
+# top-level `agent/` directory (see AGENTS.md). Easy to sweep in with `git add -A`.
+/agent/

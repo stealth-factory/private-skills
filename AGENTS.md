@@ -177,19 +177,23 @@ links; once tracked, git keeps tracking them:
 # skills/*/ matches the category in the second form, so a basename-only
 # loop would link the category and miss the skill.
 # ln -sfn will not replace a real directory: GNU ln exits 0 and quietly
-# creates the link *inside* it (verified). But a real directory at that path
+# creates the link *inside* it (verified). A real directory at that path
 # is an installed PUBLIC skill of the same name — refuse, do not delete it.
 # Deleting would leave skills-lock.json describing a skill no longer on disk,
 # and losing something is not recoverable the way failing to add is.
+# ln -sfn WILL replace a regular file (verified): refuse those too. The
+# guard is any non-symlink entry, not only directories.
 # Check BOTH destinations before creating EITHER link. Linking one at a time
 # and bailing on the second leaves a half-linked skill: one agent dir points
 # at it, the other still holds the installed copy, and nothing is staged.
 relink_skill() {
   n="$1" target="$2"
   for dest in ".claude/skills/$n" ".agents/skills/$n"; do
-    if [ -d "$dest" ] && [ ! -L "$dest" ]; then
-      echo "refusing $n: $dest is a real directory — an installed skill of" >&2
-      echo "  the same name. Rename yours, or remove that install first." >&2
+    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+      echo "refusing $n: $dest exists and is not a symlink." >&2
+      echo "  A real directory there is an installed skill of the same name;" >&2
+      echo "  a regular file would be overwritten. Rename yours, or remove" >&2
+      echo "  that path first." >&2
       return 1
     fi
   done

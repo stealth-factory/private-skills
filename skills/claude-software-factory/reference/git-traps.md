@@ -77,6 +77,11 @@ elif ! count=$(printf '%s\n' "$prs" | jq 'length'); then
   echo "UNKNOWN: could not count the PR list" >&2
 elif [ "$count" -eq 1000 ]; then
   echo "UNKNOWN: hit the --limit cap — paginate, do not call this complete" >&2
+elif [ "$count" -eq 0 ]; then
+  echo "EMPTY: gh reports no open PRs — confirm that is true before" >&2
+  echo "  concluding the sweep found nothing to fix" >&2
+else
+  echo "OK: $count open PR(s) to check"
 fi
 # An empty list can be real (no open PRs) or a surprise. It is the one result
 # that looks like success while proving nothing — confirm it before concluding

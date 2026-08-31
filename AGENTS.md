@@ -181,29 +181,30 @@ links; once tracked, git keeps tracking them:
 # is an installed PUBLIC skill of the same name — refuse, do not delete it.
 # Deleting would leave skills-lock.json describing a skill no longer on disk,
 # and losing something is not recoverable the way failing to add is.
-link_skill() {
-  dest="$1" target="$2"
-  if [ -d "$dest" ] && [ ! -L "$dest" ]; then
-    echo "refusing: $dest is a real directory — an installed skill of the" >&2
-    echo "  same name. Rename yours, or remove that install deliberately." >&2
-    return 1
-  fi
-  ln -sfn "$target" "$dest"
+# Check BOTH destinations before creating EITHER link. Linking one at a time
+# and bailing on the second leaves a half-linked skill: one agent dir points
+# at it, the other still holds the installed copy, and nothing is staged.
+relink_skill() {
+  n="$1" target="$2"
+  for dest in ".claude/skills/$n" ".agents/skills/$n"; do
+    if [ -d "$dest" ] && [ ! -L "$dest" ]; then
+      echo "refusing $n: $dest is a real directory — an installed skill of" >&2
+      echo "  the same name. Rename yours, or remove that install first." >&2
+      return 1
+    fi
+  done
+  ln -sfn "$target" ".claude/skills/$n" || return 1
+  ln -sfn "$target" ".agents/skills/$n" || return 1
+  git add -f ".claude/skills/$n" ".agents/skills/$n"
 }
 for d in skills/*/; do
   if [ -f "${d}SKILL.md" ]; then
-    n=$(basename "$d")
-    link_skill ".claude/skills/$n" "../../skills/$n" || continue
-    link_skill ".agents/skills/$n" "../../skills/$n" || continue
-    git add -f ".claude/skills/$n" ".agents/skills/$n"
+    relink_skill "$(basename "$d")" "../../skills/$(basename "$d")" || continue
   else
     for sd in "$d"*/; do
       [ -f "${sd}SKILL.md" ] || continue
-      n=$(basename "$sd")
-      cat=$(basename "$d")
-      link_skill ".claude/skills/$n" "../../skills/$cat/$n" || continue
-      link_skill ".agents/skills/$n" "../../skills/$cat/$n" || continue
-      git add -f ".claude/skills/$n" ".agents/skills/$n"
+      n=$(basename "$sd"); cat=$(basename "$d")
+      relink_skill "$n" "../../skills/$cat/$n" || continue
     done
   fi
 done

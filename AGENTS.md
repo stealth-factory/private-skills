@@ -176,29 +176,39 @@ links; once tracked, git keeps tracking them:
 # Categorised:      skills/<category>/<name>/SKILL.md
 # skills/*/ matches the category in the second form, so a basename-only
 # loop would link the category and miss the skill.
-# ln -sfn will not replace a real directory (and on GNU ln may exit 0
-# while creating a link *inside* it). Remove only a non-symlink directory.
-link_skill() {
-  dest="$1" target="$2"
-  if [ -d "$dest" ] && [ ! -L "$dest" ]; then
-    rm -rf "$dest"
-  fi
-  ln -sfn "$target" "$dest"
+# ln -sfn will not replace a real directory: GNU ln exits 0 and quietly
+# creates the link *inside* it (verified). A real directory at that path
+# is an installed PUBLIC skill of the same name — refuse, do not delete it.
+# Deleting would leave skills-lock.json describing a skill no longer on disk,
+# and losing something is not recoverable the way failing to add is.
+# ln -sfn WILL replace a regular file (verified): refuse those too. The
+# guard is any non-symlink entry, not only directories.
+# Check BOTH destinations before creating EITHER link. Linking one at a time
+# and bailing on the second leaves a half-linked skill: one agent dir points
+# at it, the other still holds the installed copy, and nothing is staged.
+relink_skill() {
+  n="$1" target="$2"
+  for dest in ".claude/skills/$n" ".agents/skills/$n"; do
+    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+      echo "refusing $n: $dest exists and is not a symlink." >&2
+      echo "  A real directory there is an installed skill of the same name;" >&2
+      echo "  a regular file would be overwritten. Rename yours, or remove" >&2
+      echo "  that path first." >&2
+      return 1
+    fi
+  done
+  ln -sfn "$target" ".claude/skills/$n" || return 1
+  ln -sfn "$target" ".agents/skills/$n" || return 1
+  git add -f ".claude/skills/$n" ".agents/skills/$n"
 }
 for d in skills/*/; do
   if [ -f "${d}SKILL.md" ]; then
-    n=$(basename "$d")
-    link_skill ".claude/skills/$n" "../../skills/$n"
-    link_skill ".agents/skills/$n" "../../skills/$n"
-    git add -f ".claude/skills/$n" ".agents/skills/$n"
+    relink_skill "$(basename "$d")" "../../skills/$(basename "$d")" || continue
   else
     for sd in "$d"*/; do
       [ -f "${sd}SKILL.md" ] || continue
-      n=$(basename "$sd")
-      cat=$(basename "$d")
-      link_skill ".claude/skills/$n" "../../skills/$cat/$n"
-      link_skill ".agents/skills/$n" "../../skills/$cat/$n"
-      git add -f ".claude/skills/$n" ".agents/skills/$n"
+      n=$(basename "$sd"); cat=$(basename "$d")
+      relink_skill "$n" "../../skills/$cat/$n" || continue
     done
   fi
 done
@@ -258,13 +268,34 @@ them would drift into confident fiction:
   codes). Read as compatibility notes, not claims about the current machine;
   `gh` has been 2.45.0, 2.91.0 and 2.96.0 across checkouts. **Detect the version
   and run the exact invocation in the form it will ship.**
-- **Review bots in this repo** — CodeRabbit's green tick meaning
-  `Review rate limited`, Codex posting no status check at all, findings arriving
-  as comments rather than check failures. Those are observations of *that* repo's
-  installed bots. **This repo has no review bots configured yet** — do not assume
-  that behaviour here until they are, and until it has been observed.
 - **Writing skills that survive review** and **driving review** — failure
   patterns earned over that repo's PR history.
 
 Those disciplines apply here; the specific verified facts belong to where they
 were verified. Read them there.
+
+## Review bots on this repo — observed, not inherited
+
+This repo **does** have review bots: they fired on PR #1 without any setup, so
+they are installed at the org level. Everything below was observed on that PR.
+Re-verify — bots drift.
+
+| Bot | Observed on PR #1 |
+| --- | --- |
+| **CodeRabbit** (`coderabbitai`) | Most active: 12 reviews. Its **final check was green (`pass`) with the description `Review rate limited`** — a passing tick on a head it never actually read. Read the description, never the colour. |
+| **Codex** (`chatgpt-codex-connector`) | Reviewed, but posted **no status check at all**, so it never appears in the rollup. Silence from it is ambiguous, not approval. |
+| **Greptile** (`greptile-apps`) | Posted a check while in progress, which was **not** in the final rollup. Do not read a verdict into its absence. |
+| **`cursor`** (`cursoragent`) | **Fixes as well as reviews** — it pushed three commits to the branch, it did not merely comment. |
+
+Two things that PR established and are worth keeping:
+
+- **The pre-review triage worked.** The PR body named four deliberate decisions
+  not to "fix" (the `.gitignore` + `git add -f` scheme, the absent LICENSE,
+  name-not-path skill references, the guarded shell). All four survived a bot
+  that was actively rewriting files. Post that triage **before** the review
+  starts, per `skills/claude-software-factory/reference/review-bots.md`.
+- **A bot that pushes commits needs its work reviewed like anyone's.** Those
+  three commits were merged; two of their claims (`ln -sfn` linking *inside* a
+  real directory, `git fetch origin main <branch>` refreshing the
+  remote-tracking ref) were checked here and hold. One change it introduced —
+  an `rm -rf` in the relink loop — did not, and is fixed in this file.

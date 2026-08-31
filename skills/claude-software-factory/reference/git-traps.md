@@ -69,14 +69,23 @@ the remainder — a sweep of 31 open PRs that never asked for more will claim
 to have checked every branch while skipping PR 31 onward.
 
 ```bash
-if prs=$(gh pr list --state open --limit 1000 --json number,headRefName); then
-  count=$(printf '%s\n' "$prs" | jq 'length')
-  # empty can be real (no open PRs) or a surprise — confirm against the UI
-  # 1000 means you hit the cap you asked for: paginate, do not treat as done
-  [ "$count" -eq 1000 ] && echo UNKNOWN: hit --limit cap
+# Each lookup tested on its own — including the count, which is a second
+# command that can fail independently of the first.
+if ! prs=$(gh pr list --state open --limit 1000 --json number,headRefName); then
+  echo "UNKNOWN: gh pr list failed" >&2
+elif ! count=$(printf '%s\n' "$prs" | jq 'length'); then
+  echo "UNKNOWN: could not count the PR list" >&2
+elif [ "$count" -eq 1000 ]; then
+  echo "UNKNOWN: hit the --limit cap — paginate, do not call this complete" >&2
+elif [ "$count" -eq 0 ]; then
+  echo "EMPTY: gh reports no open PRs — confirm that is true before" >&2
+  echo "  concluding the sweep found nothing to fix" >&2
 else
-  echo UNKNOWN: gh pr list failed
+  echo "OK: $count open PR(s) to check"
 fi
+# An empty list can be real (no open PRs) or a surprise. It is the one result
+# that looks like success while proving nothing — confirm it before concluding
+# there is nothing to check.
 ```
 
 ## 2. Squash-merge + stacked PR + auto-delete

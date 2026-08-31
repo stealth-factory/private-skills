@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.1.1"
+  version: "1.1.2"
 ---
 
 # claude-software-factory

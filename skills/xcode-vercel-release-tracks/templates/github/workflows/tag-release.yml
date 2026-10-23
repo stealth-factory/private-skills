@@ -48,6 +48,10 @@ jobs:
     concurrency:
       group: tag-release-${{ matrix.track }}
       cancel-in-progress: false
+      # Queue every run. By default a newer pending run replaces an older
+      # one, and the replacement would tag its own (later) HEAD under the
+      # version the release PR reviewed.
+      queue: max
     steps:
       - id: app
         if: vars.RELEASE_APP_CLIENT_ID != ''

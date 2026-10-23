@@ -87,7 +87,7 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
    `release-track.sh next <track>` for each (expect minor / patch / no) and
    `release-track.sh bump` + `notes` (check the changelog section and the
    manifest). Run `actionlint` on the workflows: the only expected finding is
-   `concurrency.queue` in `testflight.yml`, which GitHub accepts. Delete the
+   `concurrency.queue` in `testflight.yml` and `tag-release.yml`, which GitHub accepts. Delete the
    local tags afterwards.
 7. **Hand over the setup checklist**
    ([reference/setup-checklist.md](reference/setup-checklist.md)): GitHub

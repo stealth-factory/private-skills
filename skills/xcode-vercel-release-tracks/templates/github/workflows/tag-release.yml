@@ -6,7 +6,7 @@
 #   vercel      fast-forwards production/<track>, which Vercel deploys
 #   none        nothing more
 # A track whose version already has a tag is left alone, so a hand-cut tag
-# still works and re-running this is harmless. A track's first tag is its
+# still works. Re-running the run that tagged it resumes whatever failed. A track's first tag is its
 # baseline: it marks what exists and ships nothing.
 name: Tag release
 
@@ -70,19 +70,30 @@ jobs:
           ship=$(.github/scripts/release-track.sh get "$TRACK" ship)
           [ -n "$version" ] || { echo "no version in the ${TRACK} manifest" >&2; exit 1; }
           tag="${TRACK}-v${version}"
-          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            echo "${tag} exists; nothing to do"
-            echo "tagged=no" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ -z "$(git tag --list "${TRACK}-v[0-9]*")" ]; then baseline=yes; else baseline=no; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Annotated, and pushed with GITHUB_TOKEN (the checkout's), so it
-          # starts no workflow by itself: the ship steps below decide.
-          git tag -a "$tag" -m "$tag"
-          git push origin "$tag"
-          echo "pushed ${tag} (baseline: ${baseline})"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            # Already tagged. On a later push the tag is behind HEAD and there
+            # is nothing to do. At HEAD, this is a re-run of the release itself
+            # (a step after the tag failed): carry on, and let each step below
+            # skip what is already done.
+            if [ "$(git rev-parse "${tag}^{commit}")" != "$(git rev-parse HEAD)" ]; then
+              echo "${tag} exists; nothing to do"
+              echo "tagged=no" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "${tag} is at HEAD: resuming its release"
+          else
+            # Annotated, and pushed with GITHUB_TOKEN (the checkout's), so it
+            # starts no workflow by itself: the ship steps below decide.
+            git tag -a "$tag" -m "$tag"
+            git push origin "$tag"
+            echo "pushed ${tag}"
+          fi
+          # The baseline is the track's only tag: it marks what exists and
+          # ships nothing.
+          if [ "$(git tag --list "${TRACK}-v[0-9]*" | grep -cvx "$tag" || true)" = 0 ]; then baseline=yes; else baseline=no; fi
+          echo "baseline: ${baseline}"
           {
             echo "tagged=yes"
             echo "baseline=${baseline}"
@@ -108,6 +119,10 @@ jobs:
           # Only app-store tracks are marked Latest: that is what people install.
           latest=false
           [ "$SHIP" = testflight ] && latest=true
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "the ${TAG} release exists"
+            exit 0
+          fi
           gh release create "$TAG" --verify-tag --title "${TRACK} v${VERSION}" \
             --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
 
@@ -135,11 +150,16 @@ jobs:
               exit 1
             fi
           fi
-          remote=origin
           if [ -n "$PUSH_TOKEN" ]; then
-            remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            # The checkout's GITHUB_TOKEN sits in an http extraheader, which
+            # wins over a token in the URL. An empty value clears the header
+            # list for this one push, so the App's token is what GitHub sees.
+            git -c "http.https://github.com/.extraheader=" push \
+              "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              "${target}:refs/heads/${branch}"
+          else
+            git push origin "${target}:refs/heads/${branch}"
           fi
-          git push "$remote" "${target}:refs/heads/${branch}"
           echo "${branch} is now at ${TAG}"
 
       - name: Start the TestFlight upload at the tag
@@ -148,5 +168,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          set -euo pipefail
+          # A re-run of this release must not upload the tag twice.
+          runs=$(gh run list --workflow testflight.yml --branch "$TAG" --json databaseId --jq length)
+          if [ "$runs" != 0 ]; then
+            echo "testflight.yml already ran at ${TAG}"
+            exit 0
+          fi
           gh workflow run testflight.yml --ref "$TAG"
           echo "dispatched testflight.yml at ${TAG}"

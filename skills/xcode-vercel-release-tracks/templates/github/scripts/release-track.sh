@@ -33,7 +33,9 @@ kind=$(field kind)
 manifest=$(field manifest)
 changelog=$(field changelog)
 [ -n "$changelog" ] || changelog="$(jq -r '.paths[0]' <<< "$spec")/CHANGELOG.md"
-mapfile -t paths < <(jq -r '.paths[]' <<< "$spec")
+# A read loop, not mapfile: macOS still ships bash 3.2.
+paths=()
+while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
 prefix="${track}-v"
 
 # git-cliff wants globs; git log wants pathspecs. Same list, two spellings: a
@@ -86,7 +88,9 @@ case "$cmd" in
     # riding along with the next real change.
     releasable=$(git log "${last}..HEAD" --format=%s -- "${paths[@]}" \
       | grep -cE '^(feat|fix|perf|revert)(\(.+\))?!?:|^[a-z]+(\(.+\))?!:' || true)
-    next=$(cliff --bumped-version 2>/dev/null || true)
+    # A git-cliff failure (a bad cliff.toml, say) fails the run rather than
+    # reading as "nothing to release".
+    next=$(cliff --bumped-version)
     next="${next#"$prefix"}"
     if [ -z "$next" ] || [ "$next" = "$cur" ] || [ "$releasable" -eq 0 ]; then
       echo "next=$cur"
@@ -102,10 +106,11 @@ case "$cmd" in
     next="${3:?version}"
     cur=$(current)
     case "$kind" in
+      # perl -pi rather than sed -i, whose flags differ between GNU and macOS.
       xcodegen)
-        sed -i -E "s/^( *MARKETING_VERSION: *\"?)${cur//./\\.}(\"? *)$/\1${next}\2/" "$manifest" ;;
+        CUR="$cur" NEXT="$next" perl -pi -e 's/^( *MARKETING_VERSION: *"?)\Q$ENV{CUR}\E("? *)$/$1$ENV{NEXT}$2/' "$manifest" ;;
       xcconfig)
-        sed -i -E "s/^( *MARKETING_VERSION *= *)${cur//./\\.}( *)$/\1${next}\2/" "$manifest" ;;
+        CUR="$cur" NEXT="$next" perl -pi -e 's/^( *MARKETING_VERSION *= *)\Q$ENV{CUR}\E( *)$/$1$ENV{NEXT}$2/' "$manifest" ;;
       package-json)
         node -e '
           const fs = require("fs"), [file, version] = process.argv.slice(1);

@@ -67,8 +67,9 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
    `__EXPORT_OPTIONS_PLIST__` (path relative to `__APPLE_DIR__`) and
    `__API_URL_SETTING__` (the build setting the app reads its API base URL
    from; delete the "Pick the API" step and the setting if the app calls no
-   API). Set the matrix `platform` list and `PLATFORMS` (`IOS`, `MAC_OS`,
-   `TV_OS`, `VISION_OS`) to what the app ships. Delete the XcodeGen step for a
+   API). Set the matrix `platform` list and the external step's `PLATFORMS`
+   (`IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`) to what the app ships, and list
+   every path of the Apple track in the `push.paths` filter. Delete the XcodeGen step for a
    committed `.xcodeproj`. In `vercel.json` replace `__TRACK__`. Then
    `grep -rn '__[A-Z_]*__' .github cliff.toml` must print nothing.
 4. **Baseline changelogs.** One `CHANGELOG.md` per track with the template

@@ -19,6 +19,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # Every path of the __APPLE_TRACK__ track in .github/release-tracks.json, so a change
+    # that counts towards its release also reaches internal testers.
     paths:
       - "__APPLE_DIR__/**"
       - ".github/workflows/testflight.yml"
@@ -232,6 +234,9 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
           UPLOADED_AFTER: ${{ needs.plan.outputs.started }}
           EXTERNAL_GROUP: ${{ vars.TESTFLIGHT_EXTERNAL_GROUP || 'Public beta' }}
+          # The platforms the upload matrix builds, in App Store Connect's names
+          # (IOS, MAC_OS, TV_OS, VISION_OS). It waits for a build of each.
+          PLATFORMS: IOS,MAC_OS
         run: WHATS_NEW_FILE="$RUNNER_TEMP/whats-new.md" node .github/scripts/testflight-external.mjs
 
       - name: Remove API key

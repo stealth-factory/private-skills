@@ -86,8 +86,9 @@ case "$cmd" in
     # Only changes a user gets start a release: feat, fix, perf, revert and
     # anything marked breaking. Docs and chores still reach the changelog,
     # riding along with the next real change.
-    releasable=$(git log "${last}..HEAD" --format=%s -- "${paths[@]}" \
-      | grep -cE '^(feat|fix|perf|revert)(\(.+\))?!?:|^[a-z]+(\(.+\))?!:' || true)
+    # Whole messages, so a BREAKING CHANGE footer counts as well as a `!`.
+    releasable=$(git log -z "${last}..HEAD" --format=%B -- "${paths[@]}" \
+      | perl -0 -ne '$n++ if /\A(?:(?:feat|fix|perf|revert)(?:\(.+\))?!?:|[a-z]+(?:\(.+\))?!:)|^BREAKING[ -]CHANGE:/m; END { print $n + 0 }')
     # A git-cliff failure (a bad cliff.toml, say) fails the run rather than
     # reading as "nothing to release".
     next=$(cliff --bumped-version)

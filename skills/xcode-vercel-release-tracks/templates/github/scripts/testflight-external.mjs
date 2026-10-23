@@ -175,10 +175,21 @@ if (!group) {
   );
 }
 
+// With automatic notification off, an approved build waits for someone to
+// press Notify Testers; this release should reach testers on approval.
+async function enableAutoNotify(build) {
+  const { data } = await asc("GET", `/v1/builds/${build.id}/buildBetaDetail`);
+  if (data.attributes.autoNotifyEnabled) return;
+  await asc("PATCH", `/v1/buildBetaDetails/${data.id}`, {
+    data: { type: "buildBetaDetails", id: data.id, attributes: { autoNotifyEnabled: true } },
+  });
+}
+
 const summary = [];
 for (const platform of platforms) {
   const build = await findBuild(app.id, platform);
   await setWhatsNew(build);
+  await enableAutoNotify(build);
   await asc("POST", `/v1/betaGroups/${group.id}/relationships/builds`, {
     data: [{ type: "builds", id: build.id }],
   });

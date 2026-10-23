@@ -1,0 +1,152 @@
+# Tags a track's release once its release PR is merged, then ships it.
+#
+# release-pr.yml prepares; this fires when that lands on main and turns it into
+# a <track>-vX.Y.Z tag and a GitHub Release. Then, by the track's `ship`:
+#   testflight  starts testflight.yml at the tag (external testers)
+#   vercel      fast-forwards production/<track>, which Vercel deploys
+#   none        nothing more
+# A track whose version already has a tag is left alone, so a hand-cut tag
+# still works and re-running this is harmless. A track's first tag is its
+# baseline: it marks what exists and ships nothing.
+name: Tag release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  # To start testflight.yml at the new tag. A tag pushed with GITHUB_TOKEN
+  # starts no workflows; a dispatch is the documented exception.
+  actions: write
+
+jobs:
+  tracks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      names: ${{ steps.list.outputs.names }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - id: list
+        run: echo "names=$(.github/scripts/release-track.sh list)" >> "$GITHUB_OUTPUT"
+
+  tag:
+    name: ${{ matrix.track }}
+    needs: tracks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        track: ${{ fromJSON(needs.tracks.outputs.names) }}
+    # One release per track at a time, so two quick merges cannot race on the
+    # same production branch.
+    concurrency:
+      group: tag-release-${{ matrix.track }}
+      cancel-in-progress: false
+    steps:
+      - id: app
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Tag it, if this version has not been tagged
+        id: tag
+        env:
+          TRACK: ${{ matrix.track }}
+        run: |
+          set -euo pipefail
+          version=$(.github/scripts/release-track.sh current "$TRACK")
+          ship=$(.github/scripts/release-track.sh get "$TRACK" ship)
+          [ -n "$version" ] || { echo "no version in the ${TRACK} manifest" >&2; exit 1; }
+          tag="${TRACK}-v${version}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "${tag} exists; nothing to do"
+            echo "tagged=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$(git tag --list "${TRACK}-v[0-9]*")" ]; then baseline=yes; else baseline=no; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Annotated, and pushed with GITHUB_TOKEN (the checkout's), so it
+          # starts no workflow by itself: the ship steps below decide.
+          git tag -a "$tag" -m "$tag"
+          git push origin "$tag"
+          echo "pushed ${tag} (baseline: ${baseline})"
+          {
+            echo "tagged=yes"
+            echo "baseline=${baseline}"
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "ship=${ship}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: GitHub Release
+        if: steps.tag.outputs.tagged == 'yes' && steps.tag.outputs.baseline == 'no'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACK: ${{ matrix.track }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          SHIP: ${{ steps.tag.outputs.ship }}
+        run: |
+          set -euo pipefail
+          # The section release-pr.yml wrote: the notes are the text that was
+          # reviewed in the release PR.
+          .github/scripts/release-track.sh notes "$TRACK" "$VERSION" > "$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || { echo "no ${VERSION} section in the ${TRACK} changelog" >&2; exit 1; }
+          # Only app-store tracks are marked Latest: that is what people install.
+          latest=false
+          [ "$SHIP" = testflight ] && latest=true
+          gh release create "$TAG" --verify-tag --title "${TRACK} v${VERSION}" \
+            --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
+
+      - name: Move production/${{ matrix.track }} to the tag
+        # Each Vercel project's Production Branch is production/<track>; Vercel's
+        # Git integration deploys production from this push, so no Vercel token
+        # is needed. The baseline tag creates the branch.
+        if: steps.tag.outputs.tagged == 'yes' && steps.tag.outputs.ship == 'vercel'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          TRACK: ${{ matrix.track }}
+          # The release App is the only identity the production/* ruleset lets
+          # push. Without it this falls back to the checkout's GITHUB_TOKEN.
+          PUSH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          branch="production/${TRACK}"
+          target=$(git rev-parse "${TAG}^{commit}")
+          if git fetch -q origin "refs/heads/${branch}:refs/remotes/origin/${branch}" 2>/dev/null; then
+            # A real fast-forward or nothing. A production branch that is not
+            # an ancestor of the tag means someone committed to it or main was
+            # rewritten: that needs a person, not an overwrite.
+            if ! git merge-base --is-ancestor "origin/${branch}" "$target"; then
+              echo "::error::${branch} is not an ancestor of ${TAG}; refusing to move it."
+              exit 1
+            fi
+          fi
+          remote=origin
+          if [ -n "$PUSH_TOKEN" ]; then
+            remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+          git push "$remote" "${target}:refs/heads/${branch}"
+          echo "${branch} is now at ${TAG}"
+
+      - name: Start the TestFlight upload at the tag
+        if: steps.tag.outputs.tagged == 'yes' && steps.tag.outputs.baseline == 'no' && steps.tag.outputs.ship == 'testflight'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh workflow run testflight.yml --ref "$TAG"
+          echo "dispatched testflight.yml at ${TAG}"

@@ -49,6 +49,7 @@ against that release. Manage installed skills with `npx skills@1.5.23 list`,
 | Skill | What it's for |
 | ----- | ------------- |
 | [`claude-software-factory`](./skills/claude-software-factory/SKILL.md) | Run a project as a factory of two AI agents — a **PM** that owns the tracker, the PRs and the merge queue and writes no application code, and a **developer** that owns branches, worktrees and the code — with review bots reviewing and a **human as the only merge authority**. The operating manual for the PM half: *verify, never relay* (findings go stale faster than they get resolved), the handover message as the whole interface, triaging reviewers **before** they review, and the git traps that succeed silently — the lying `mergeable` flag, squash + stack + auto-delete, and the clean rebase that drops a hunk with no error. Ships handover templates, a review-bot playbook, and the git-trap catalogue. |
+| [`xcode-vercel-release-tracks`](./skills/xcode-vercel-release-tracks/SKILL.md) | Semantic-versioned **release tracks** for a monorepo that ships an Xcode app via TestFlight and web apps or APIs on Vercel. One `main`; per-track git-cliff versions, changelogs and `<track>-vX.Y.Z` tags; a standing release PR per track. Merges to main go to TestFlight internal and a Vercel `staging` environment (with a Neon `staging` branch); tags go to TestFlight external with Beta App Review and fast-forward `production/<track>` for Vercel production. Ships the workflows, scripts, config and a one-off setup checklist. |
 
 ## Working in this repo
 

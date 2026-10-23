@@ -1,0 +1,45 @@
+# Resets a Vercel track's Neon `staging` branch from its parent (production),
+# so staging holds production-shaped data again and the next main deploy's
+# migrations rehearse against it. Run by hand: Actions → Neon refresh staging.
+#
+# Needs, per track: repository variable NEON_PROJECT_ID_<TRACK> (upper case,
+# e.g. NEON_PROJECT_ID_API) and the secret NEON_API_KEY. The staging branch
+# must be called `staging` and have no child branches.
+name: Neon refresh staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Track whose staging database to reset (e.g. api)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Reset staging from its parent
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          TRACK: ${{ inputs.track }}
+          VARS: ${{ toJSON(vars) }}
+        run: |
+          set -euo pipefail
+          name="NEON_PROJECT_ID_$(echo "$TRACK" | tr '[:lower:]-' '[:upper:]_')"
+          project=$(jq -r --arg n "$name" '.[$n] // empty' <<< "$VARS")
+          [ -n "$project" ] || { echo "::error::Repository variable $name is not set."; exit 1; }
+          [ -n "$NEON_API_KEY" ] || { echo "::error::Secret NEON_API_KEY is not set."; exit 1; }
+          api="https://console.neon.tech/api/v2/projects/${project}"
+          auth=(-H "authorization: Bearer ${NEON_API_KEY}" -H "accept: application/json")
+          branch=$(curl -fsS "${auth[@]}" "$api/branches" | jq -r '.branches[] | select(.name == "staging")')
+          [ -n "$branch" ] || { echo "::error::No branch named staging in Neon project $project."; exit 1; }
+          id=$(jq -r .id <<< "$branch")
+          parent=$(jq -r .parent_id <<< "$branch")
+          curl -fsS -X POST "${auth[@]}" -H "content-type: application/json" \
+            --data "$(jq -n --arg p "$parent" '{source_branch_id: $p}')" \
+            "$api/branches/${id}/restore" > /dev/null
+          echo "staging ($id) reset from $parent" | tee -a "$GITHUB_STEP_SUMMARY"

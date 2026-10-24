@@ -58,17 +58,33 @@ function token() {
   return `${header}.${payload}.${base64url(signature)}`;
 }
 
+// The polling runs for up to an hour, so one dropped connection, 429 or 5xx
+// must not fail a release whose builds are already uploaded. Only reads are
+// retried: a POST or PATCH may have landed before the error.
 async function asc(method, path, body) {
-  const response = await fetch(`https://api.appstoreconnect.apple.com${path}`, {
-    method,
-    headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await response.text();
-  if (!response.ok) {
+  const attempts = method === "GET" ? 4 : 1;
+  for (let attempt = 1; ; attempt++) {
+    let response;
+    try {
+      response = await fetch(`https://api.appstoreconnect.apple.com${path}`, {
+        method,
+        headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      await sleep(5_000 * attempt);
+      continue;
+    }
+    const text = await response.text();
+    if (response.ok) return text ? JSON.parse(text) : {};
+    if ((response.status === 429 || response.status >= 500) && attempt < attempts) {
+      await sleep(5_000 * attempt);
+      continue;
+    }
     throw new Error(`${method} ${path} → ${response.status}: ${text}`);
   }
-  return text ? JSON.parse(text) : {};
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

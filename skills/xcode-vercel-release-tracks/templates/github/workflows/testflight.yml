@@ -172,7 +172,7 @@ jobs:
             url="$STAGING"
           fi
           echo "API_URL=$url" >> "$GITHUB_ENV"
-          echo "API: ${url:-(not set; the project's default)}"
+          echo "API: ${url:-not set, so the project default applies}"
 
       - name: Generate Xcode project
         run: |
@@ -238,7 +238,11 @@ jobs:
           echo "APP_STORE_KEY_PATH=$key" >> "$GITHUB_ENV"
 
       - name: What to Test
-        run: .github/scripts/release-track.sh notes __APPLE_TRACK__ "${{ needs.plan.outputs.version }}" > "$RUNNER_TEMP/whats-new.md"
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          .github/scripts/release-track.sh notes __APPLE_TRACK__ "$VERSION" > "$RUNNER_TEMP/whats-new.md"
+          [ -s "$RUNNER_TEMP/whats-new.md" ] || { echo "::error::No $VERSION section in the __APPLE_TRACK__ changelog."; exit 1; }
 
       - name: Submit for review and add to the external group
         env:

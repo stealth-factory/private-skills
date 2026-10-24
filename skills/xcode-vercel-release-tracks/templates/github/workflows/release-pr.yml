@@ -13,13 +13,15 @@ on:
   # To see what the next releases would be without waiting for a merge.
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   tracks:
+    # A run from another branch would build the release PR from that branch.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 5
     outputs:
       names: ${{ steps.list.outputs.names }}
@@ -40,6 +42,11 @@ jobs:
     needs: tracks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      # Push release/<track> (when the App is not configured).
+      contents: write
+      # Open, update and close the release PR.
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +67,9 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Only what this job does with it; the token is scoped to this repository.
+          permission-contents: write
+          permission-pull-requests: write
 
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -101,7 +111,10 @@ jobs:
 
       - name: Write the changelog and bump the manifest
         if: steps.next.outputs.release == 'yes'
-        run: .github/scripts/release-track.sh bump "${{ matrix.track }}" "${{ steps.next.outputs.next }}"
+        env:
+          TRACK: ${{ matrix.track }}
+          NEXT: ${{ steps.next.outputs.next }}
+        run: .github/scripts/release-track.sh bump "$TRACK" "$NEXT"
 
       - name: Open or update the release PR
         if: steps.next.outputs.release == 'yes'
@@ -155,7 +168,7 @@ jobs:
             "\`cliff.toml\` for grouping), or edit the changelog on main after the release." \
             "" \
             "---")
-          notes=$(.github/scripts/release-track.sh notes "$TRACK" "$NEXT" | head -80)
+          notes=$(.github/scripts/release-track.sh notes "$TRACK" "$NEXT" | sed -n '1,80p')
           full=$(printf '%s\n\n%s\n' "$body" "$notes")
           # An explicit search for an OPEN pull request. `gh pr view <branch>`
           # falls back to the last merged one and would rewrite that instead.

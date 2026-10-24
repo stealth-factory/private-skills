@@ -38,7 +38,8 @@ jobs:
           branch=$(curl -fsS "${auth[@]}" "$api/branches" | jq -r '.branches[] | select(.name == "staging")')
           [ -n "$branch" ] || { echo "::error::No branch named staging in Neon project $project."; exit 1; }
           id=$(jq -r .id <<< "$branch")
-          parent=$(jq -r .parent_id <<< "$branch")
+          parent=$(jq -r '.parent_id // empty' <<< "$branch")
+          [ -n "$parent" ] || { echo "::error::Branch staging ($id) has no parent, so there is nothing to reset it from."; exit 1; }
           curl -fsS -X POST "${auth[@]}" -H "content-type: application/json" \
             --data "$(jq -n --arg p "$parent" '{source_branch_id: $p}')" \
             "$api/branches/${id}/restore" > /dev/null

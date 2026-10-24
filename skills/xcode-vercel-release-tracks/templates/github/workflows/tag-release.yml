@@ -15,15 +15,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  # To start testflight.yml at the new tag. A tag pushed with GITHUB_TOKEN
-  # starts no workflows; a dispatch is the documented exception.
-  actions: write
+permissions: {}
 
 jobs:
   tracks:
+    # A run from another branch would tag that branch's HEAD.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 5
     outputs:
       names: ${{ steps.list.outputs.names }}
@@ -44,6 +44,12 @@ jobs:
     needs: tracks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      # Push the tag, create the GitHub Release.
+      contents: write
+      # To start testflight.yml at the new tag. A tag pushed with GITHUB_TOKEN
+      # starts no workflows; a dispatch is the documented exception.
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +70,8 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Only the production/<track> push; the token is scoped to this repository.
+          permission-contents: write
 
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:

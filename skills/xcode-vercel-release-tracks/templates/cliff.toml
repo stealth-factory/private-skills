@@ -58,6 +58,8 @@ commit_parsers = [
   { message = "^style", group = "Miscellaneous" },
   { message = "^revert", group = "Reverted" },
   { body = ".*security", group = "Security" },
+  # Last, so anything no parser above matched still reaches the changelog.
+  { message = ".*", group = "Other" },
 ]
 
 filter_commits = false

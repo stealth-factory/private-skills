@@ -32,7 +32,12 @@ jobs:
         with:
           persist-credentials: false
       - id: list
-        run: echo "names=$(.github/scripts/release-track.sh list)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          # Assigned first: inside the echo, a failing list would still write
+          # an empty output and the matrix would fail with a vaguer error.
+          names=$(.github/scripts/release-track.sh list)
+          echo "names=${names}" >> "$GITHUB_OUTPUT"
 
   tag:
     name: ${{ matrix.track }}
@@ -133,8 +138,9 @@ jobs:
       - name: Move production/${{ matrix.track }} to the tag
         # Each Vercel project's Production Branch is production/<track>; Vercel's
         # Git integration deploys production from this push, so no Vercel token
-        # is needed. The baseline tag creates the branch.
-        if: steps.tag.outputs.tagged == 'yes' && steps.tag.outputs.ship == 'vercel'
+        # is needed. Not for the baseline, which ships nothing: pushing the
+        # branch would deploy production. The first real release creates it.
+        if: steps.tag.outputs.tagged == 'yes' && steps.tag.outputs.baseline == 'no' && steps.tag.outputs.ship == 'vercel'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           TRACK: ${{ matrix.track }}

@@ -28,7 +28,12 @@ jobs:
         with:
           persist-credentials: false
       - id: list
-        run: echo "names=$(.github/scripts/release-track.sh list)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          # Assigned first: inside the echo, a failing list would still write
+          # an empty output and the matrix would fail with a vaguer error.
+          names=$(.github/scripts/release-track.sh list)
+          echo "names=${names}" >> "$GITHUB_OUTPUT"
 
   prepare:
     name: ${{ matrix.track }}
@@ -68,7 +73,31 @@ jobs:
 
       - name: What the next version would be
         id: next
-        run: .github/scripts/release-track.sh next "${{ matrix.track }}" | tee -a "$GITHUB_OUTPUT"
+        env:
+          TRACK: ${{ matrix.track }}
+        run: |
+          # pipefail, or tee's success would hide a release-track.sh failure.
+          set -euo pipefail
+          .github/scripts/release-track.sh next "$TRACK" | tee -a "$GITHUB_OUTPUT"
+
+      # Nothing to release any more (say a feat was reverted without a
+      # `revert:` title): a release PR left open would cut a stale version.
+      - name: Close a release PR that no longer applies
+        if: steps.next.outputs.release == 'no'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          TRACK: ${{ matrix.track }}
+        run: |
+          set -euo pipefail
+          open=$(gh pr list --head "release/${TRACK}" --base main --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -z "$open" ]; then
+            echo "no open release PR for ${TRACK}"
+            exit 0
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${open}/comments" \
+            -f body="Nothing releasable for ${TRACK} since its last tag any more, so this release is closed. The next releasable merge opens a new one." >/dev/null
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/pulls/${open}" -f state=closed --jq .html_url
 
       - name: Write the changelog and bump the manifest
         if: steps.next.outputs.release == 'yes'
@@ -101,9 +130,16 @@ jobs:
             "whose version already matches it. Prepared by the release-pr" \
             "workflow; merging this is the release." \
             | git commit -q -F -
-          # Force, because this branch is the bot's alone and is rebuilt from
-          # main every time. Nobody should be committing to it.
-          git push -f origin "$branch"
+          # Unchanged release (a merge outside this track's paths, say): leave
+          # the branch alone, so its checks and any approval stay put.
+          if git rev-parse -q --verify "refs/remotes/origin/${branch}" >/dev/null \
+            && git diff --quiet "origin/${branch}" HEAD -- "$manifest" "$changelog"; then
+            echo "release/${TRACK} already has this release; not pushing"
+          else
+            # Force, because this branch is the bot's alone and is rebuilt
+            # from main every time. Nobody should be committing to it.
+            git push -f origin "$branch"
+          fi
 
           case "$(.github/scripts/release-track.sh get "$TRACK" ship)" in
             testflight) ships="tags it \`${TRACK}-v${NEXT}\` and uploads that build to TestFlight for external testers (Beta App Review for the first build of a version)." ;;
@@ -113,9 +149,10 @@ jobs:
           body=$(printf '%s\n' \
             "Merging this cuts **${TRACK} v${NEXT}**. It ${ships}" \
             "" \
-            "This PR rewrites itself on every merge to main. Do not commit to it" \
-            "(the branch is force-pushed); edit the changelog on main instead if" \
-            "something reads badly." \
+            "This PR rewrites itself on every merge to main that changes the release." \
+            "Do not commit to it: the branch is force-pushed. The notes come from the" \
+            "squashed PR titles, so fix wording at the source (a PR title, or" \
+            "\`cliff.toml\` for grouping), or edit the changelog on main after the release." \
             "" \
             "---")
           notes=$(.github/scripts/release-track.sh notes "$TRACK" "$NEXT" | head -80)

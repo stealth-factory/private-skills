@@ -70,8 +70,12 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
    API). Set the matrix `platform` list and the external step's `PLATFORMS`
    (`IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`) to what the app ships, and list
    every path of the Apple track in the `push.paths` filter. Delete the XcodeGen step for a
-   committed `.xcodeproj`. In `vercel.json` replace `__TRACK__`. Then
-   `grep -rn '__[A-Z_]*__' .github cliff.toml` must print nothing.
+   committed `.xcodeproj`. In `ExportOptions.plist` replace `__TEAM_ID__`; in
+   each `vercel.json` replace `__TRACK__`. Then
+   `grep -rn '__[A-Z_]*__' .github cliff.toml <apple dir>/<export options> <app>/vercel.json`
+   must print nothing. Check the app's Info.plist sets
+   `ITSAppUsesNonExemptEncryption` (usually `false`): without it every build
+   waits on an export compliance answer and the external stage stops.
 4. **Baseline changelogs.** One `CHANGELOG.md` per track with the template
    header and a hand-written `## [<current version>] - <today>` section. The
    first `tag-release.yml` run tags that version as the track's baseline.
@@ -100,8 +104,9 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
    push that links a new project.
 8. **Open the PR** titled e.g. `ci: release tracks and two-stage testflight`.
    `ci` does not cut a release. Say in the body that merging it lays baseline
-   tags and creates `production/<track>` branches, and which setup items are
-   still the user's.
+   tags and ships nothing (the first real release of a Vercel track creates
+   its `production/<track>` branch), and which setup items are still the
+   user's.
 
 ## Day-two operations
 

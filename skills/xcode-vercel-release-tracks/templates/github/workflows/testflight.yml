@@ -13,6 +13,7 @@ name: TestFlight
 # Needs repository secrets from an App Store Connect API key (Users and Access → Integrations → Team Keys, Admin role):
 #   APP_STORE_KEY_ID, APP_STORE_ISSUER_ID, APP_STORE_KEY_P8_BASE64 (base64 of the AuthKey_<id>.p8 file).
 # Optional repository variables: TESTFLIGHT_EXTERNAL_GROUP names the external group (default "Public beta");
+# TESTFLIGHT_LOCALE is the "What to Test" localisation (default en-US);
 # STAGING_API_URL and PRODUCTION_API_URL are the API base URLs baked into internal and tagged builds.
 
 on:
@@ -90,9 +91,11 @@ jobs:
               eval "$(.github/scripts/release-track.sh next __APPLE_TRACK__)"
               if [ "$release" = yes ]; then
                 version="$next"
-              elif [ -n "$last" ] && [ "$last" = "__APPLE_TRACK__-v$current" ]; then
-                # Nothing releasable yet, but this is still newer than the last release: label
-                # it the next patch, so it never joins a version that has already gone out.
+              elif [ -n "$last" ]; then
+                # Nothing releasable yet, but this is still newer than the manifest's version:
+                # label it the next patch, so it never joins a version that has gone out. That
+                # covers the moment after a release PR merges and before its tag lands, when
+                # the manifest is already ahead of the last tag.
                 IFS=. read -r major minor patch <<< "$current"
                 version="$major.$minor.$((patch + 1))"
               else
@@ -152,14 +155,24 @@ jobs:
         run: echo "BUILD_NUMBER=$(( $(date -u +%s) / 60 ))" >> "$GITHUB_ENV"
 
       # Internal builds talk to the staging API (main's fixed staging domain on Vercel), tagged builds to production.
+      # An unset variable leaves the project's own default: fine for internal builds, refused for a release.
       - name: Pick the API
         env:
+          STAGE: ${{ needs.plan.outputs.stage }}
           STAGING: ${{ vars.STAGING_API_URL }}
           PRODUCTION: ${{ vars.PRODUCTION_API_URL }}
         run: |
-          if [ "${{ needs.plan.outputs.stage }}" = external ]; then url="$PRODUCTION"; else url="$STAGING"; fi
+          if [ "$STAGE" = external ]; then
+            url="$PRODUCTION"
+            if [ -z "$url" ]; then
+              echo "::error::Repository variable PRODUCTION_API_URL is not set, so this release would ship the project's default API."
+              exit 1
+            fi
+          else
+            url="$STAGING"
+          fi
           echo "API_URL=$url" >> "$GITHUB_ENV"
-          echo "API: ${url:-(not set)}"
+          echo "API: ${url:-(not set; the project's default)}"
 
       - name: Generate Xcode project
         run: |
@@ -176,7 +189,8 @@ jobs:
             -destination 'generic/platform=${{ matrix.platform }}' -archivePath "$RUNNER_TEMP/App.xcarchive" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$APP_STORE_KEY_PATH" -authenticationKeyID "$APP_STORE_KEY_ID" -authenticationKeyIssuerID "$APP_STORE_ISSUER_ID" \
-            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" MARKETING_VERSION="${{ needs.plan.outputs.version }}" __API_URL_SETTING__="$API_URL"
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" MARKETING_VERSION="${{ needs.plan.outputs.version }}" \
+            ${API_URL:+"__API_URL_SETTING__=$API_URL"}
 
       - name: Upload to App Store Connect
         env:
@@ -237,6 +251,8 @@ jobs:
           # The platforms the upload matrix builds, in App Store Connect's names
           # (IOS, MAC_OS, TV_OS, VISION_OS). It waits for a build of each.
           PLATFORMS: IOS,MAC_OS
+          # The "What to Test" localisation, one the app has in TestFlight (en-US, en-AU, en-GB, …).
+          WHATS_NEW_LOCALE: ${{ vars.TESTFLIGHT_LOCALE || 'en-US' }}
         run: WHATS_NEW_FILE="$RUNNER_TEMP/whats-new.md" node .github/scripts/testflight-external.mjs
 
       - name: Remove API key

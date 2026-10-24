@@ -16,6 +16,7 @@
 //   UPLOADED_AFTER     ISO time; older builds of the same version are ignored
 //   EXTERNAL_GROUP     the external TestFlight group's name
 //   WHATS_NEW_FILE     optional, text for "What to Test"
+//   WHATS_NEW_LOCALE   optional, its localisation, default en-US
 //   PLATFORMS          optional, default "IOS,MAC_OS"
 
 import { createSign } from "node:crypto";
@@ -35,7 +36,7 @@ const version = env("VERSION");
 const uploadedAfter = new Date(env("UPLOADED_AFTER"));
 const groupName = env("EXTERNAL_GROUP");
 const platforms = env("PLATFORMS", "IOS,MAC_OS").split(",");
-const locale = process.env.WHATS_NEW_LOCALE || "en-AU";
+const locale = process.env.WHATS_NEW_LOCALE || "en-US";
 // TestFlight caps "What to Test" at 4,000 characters.
 const whatsNew = process.env.WHATS_NEW_FILE
   ? readFileSync(process.env.WHATS_NEW_FILE, "utf8").trim().slice(0, 4000)
@@ -149,6 +150,14 @@ async function submitForReview(build, platform) {
       });
       console.log(`${platform}: submitted for Beta App Review`);
       return "WAITING_FOR_BETA_REVIEW";
+    }
+    if (state === "MISSING_EXPORT_COMPLIANCE") {
+      throw new Error(
+        `${platform} build ${build.attributes.version} is waiting on its export compliance answer. ` +
+          "Set ITSAppUsesNonExemptEncryption in the app's Info.plist (false if it only uses " +
+          "exempt encryption such as HTTPS) so future builds skip the question, answer it for " +
+          "this build in App Store Connect, then re-run this job.",
+      );
     }
     if (state !== "PROCESSING" || Date.now() > deadline) {
       throw new Error(`${platform} build ${build.attributes.version} is ${state}, which cannot be submitted`);

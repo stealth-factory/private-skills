@@ -19,9 +19,9 @@ Order matters where marked.
       but their CI does not run and `production/*` must be pushable by
       GITHUB_TOKEN.
 - [ ] **Ruleset on `production/*`** (Vercel tracks): restrict updates to the
-      release App (bypass list), block deletion and force-push. Creating the
-      branch the first time is done by the baseline tag run, so add the App to
-      the bypass list before merging the setup PR.
+      release App (bypass list), block deletion and force-push. The track's
+      first real release creates the branch (the baseline does not), so add
+      the App to the bypass list before merging the first release PR.
 - [ ] **Required checks** on `main` include `PR title / lint` and the repo's CI.
 - [ ] Optional: ruleset on `release/*` so only the App pushes them.
 
@@ -36,12 +36,18 @@ Order matters where marked.
       upload from main reaches it with no API call.
 - [ ] **External group** named `Public beta`, or set the repository variable
       `TESTFLIGHT_EXTERNAL_GROUP`. Public link optional.
+- [ ] Info.plist sets `ITSAppUsesNonExemptEncryption` (`false` unless the app
+      uses non-exempt encryption), or every build waits on an export
+      compliance answer and the external stage fails.
+- [ ] Repository variable `TESTFLIGHT_LOCALE` if "What to Test" should use a
+      localisation other than `en-US` (one the app has in TestFlight).
 - [ ] **Test Information** filled in, or Beta App Review rejects the first
       submission: beta description, feedback email, privacy policy URL, review
       contact, demo account and notes if the app needs a sign-in.
 - [ ] Repository variables `STAGING_API_URL` and `PRODUCTION_API_URL` if the app
       talks to a Vercel track (internal builds get staging, tagged builds
-      production). The app reads them from the build setting the workflow
+      production). A tagged build fails without `PRODUCTION_API_URL`; an
+      internal build without `STAGING_API_URL` keeps the project's default. The app reads them from the build setting the workflow
       passes (`__API_URL_SETTING__` in the template), usually via Info.plist.
       Consider a hidden in-app override so a tester can switch a build to
       production when reproducing a bug.
@@ -52,7 +58,8 @@ Do these **before the first push that links the project**: a new project's
 first deployment always goes to production.
 
 - [ ] **Production Branch** = `production/<track>` (Settings → Environments →
-      Production → Branch Tracking).
+      Production → Branch Tracking). It need not exist yet: the track's first
+      release creates it.
 - [ ] **`staging` custom environment** tracking `main`, with its own env vars
       and a fixed domain (e.g. `staging.<domain>`, `staging-api.<domain>`).
       Pro includes one per project. Hobby fallback: assign the staging domain to
@@ -82,8 +89,9 @@ first deployment always goes to production.
 
 ## After the setup PR merges
 
-- [ ] `tag-release.yml` laid baseline tags `<track>-v<version>` (and created
-      `production/<track>` for Vercel tracks). Check the tags page.
+- [ ] `tag-release.yml` laid baseline tags `<track>-v<version>`. Check the
+      tags page. No `production/<track>` branch yet: the first real release
+      creates it, and Vercel deploys production from it then.
 - [ ] The first `feat`/`fix` merge opens `release(<track>): …` PRs; their checks
       run (if not, the release App is missing).
 - [ ] A main build reached TestFlight internal testers.

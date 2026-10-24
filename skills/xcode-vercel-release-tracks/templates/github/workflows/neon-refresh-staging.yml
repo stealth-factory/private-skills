@@ -35,7 +35,17 @@ jobs:
           [ -n "$NEON_API_KEY" ] || { echo "::error::Secret NEON_API_KEY is not set."; exit 1; }
           api="https://console.neon.tech/api/v2/projects/${project}"
           auth=(-H "authorization: Bearer ${NEON_API_KEY}" -H "accept: application/json")
-          branch=$(curl -fsS "${auth[@]}" "$api/branches" | jq -r '.branches[] | select(.name == "staging")')
+          # The list is paginated, search or not: follow the cursor until an
+          # exact match turns up or the pages run out.
+          branch= cursor=
+          while :; do
+            page=$(curl -fsS "${auth[@]}" --get --data-urlencode search=staging \
+              ${cursor:+--data-urlencode "cursor=$cursor"} "$api/branches")
+            branch=$(jq -c '[.branches[] | select(.name == "staging")][0] // empty' <<< "$page")
+            [ -z "$branch" ] || break
+            cursor=$(jq -r '.pagination.next // empty' <<< "$page")
+            [ -n "$cursor" ] || break
+          done
           [ -n "$branch" ] || { echo "::error::No branch named staging in Neon project $project."; exit 1; }
           id=$(jq -r .id <<< "$branch")
           parent=$(jq -r '.parent_id // empty' <<< "$branch")

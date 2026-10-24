@@ -1,0 +1,35 @@
+{
+  "tracks": [
+    {
+      "name": "apple",
+      "kind": "xcodegen",
+      "manifest": "apps/apple/project.yml",
+      "paths": [
+        "apps/apple"
+      ],
+      "ship": "testflight"
+    },
+    {
+      "name": "api",
+      "kind": "package-json",
+      "manifest": "apps/api/package.json",
+      "paths": [
+        "apps/api",
+        "packages",
+        "pnpm-lock.yaml"
+      ],
+      "ship": "vercel"
+    },
+    {
+      "name": "web",
+      "kind": "package-json",
+      "manifest": "apps/web/package.json",
+      "paths": [
+        "apps/web",
+        "packages",
+        "pnpm-lock.yaml"
+      ],
+      "ship": "vercel"
+    }
+  ]
+}

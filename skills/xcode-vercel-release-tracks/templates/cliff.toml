@@ -1,0 +1,74 @@
+# How each release track's changelog is built, and what decides its version.
+#
+# git-cliff reads the conventional commits since the track's last tag
+# (apple-v*, api-v*, web-v*). .github/scripts/release-track.sh passes the
+# tag pattern and the track's paths, so one config serves all three.
+#
+# Squash merge means the PR title is the commit subject, so these rules are
+# really rules about PR titles. pr-title.yml enforces them.
+
+[changelog]
+header = """
+# Changelog
+
+Every release of this track, and what changed in it. Generated from the
+commit subjects, which is why they are worth writing carefully.
+"""
+# Tags are <track>-vX.Y.Z; the heading shows just the version.
+body = """
+{% if version -%}
+## [{{ version | split(pat="-v") | last }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## Unreleased
+{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | upper_first }}\
+{% if commit.breaking %} — **breaking**{% endif %}
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+# A commit that is not conventional still appears, under "Other", rather than
+# vanishing. The baseline tags keep the prose commits from before this
+# existed out of every changelog.
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = true
+
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactor" },
+  { message = "^doc", group = "Documentation" },
+  { message = "^test", group = "Tests" },
+  { message = "^build", group = "Build" },
+  { message = "^ci", group = "CI" },
+  # The release commits this machinery makes itself.
+  { message = "^release(\\(.+\\))?:", skip = true },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore\\(deps\\)", group = "Dependencies" },
+  { message = "^chore", group = "Miscellaneous" },
+  { message = "^style", group = "Miscellaneous" },
+  { message = "^revert", group = "Reverted" },
+  { body = ".*security", group = "Security" },
+  # Last, so anything no parser above matched still reaches the changelog.
+  { message = ".*", group = "Other" },
+]
+
+filter_commits = false
+topo_order = false
+sort_commits = "oldest"
+
+[bump]
+# feat -> minor, fix -> patch, breaking -> major. Below 1.0.0 a breaking
+# change moves the minor rather than the major, which is semver's own rule
+# for 0.x.
+features_always_bump_minor = true
+breaking_always_bump_major = false

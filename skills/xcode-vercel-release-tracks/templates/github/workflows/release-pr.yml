@@ -1,0 +1,187 @@
+# Keeps one standing pull request per release track describing its next release.
+#
+# Every merge to main updates them: the version git-cliff computes from the
+# conventional commits since the track's last tag (only commits touching the
+# track's paths count), the changelog entry and the manifest bump. Merging a
+# track's PR is that track's release; tag-release.yml does the rest.
+# Tracks are listed in .github/release-tracks.json.
+name: Release PR
+
+on:
+  push:
+    branches: [main]
+  # To see what the next releases would be without waiting for a merge.
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  tracks:
+    # A run from another branch would build the release PR from that branch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      names: ${{ steps.list.outputs.names }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - id: list
+        run: |
+          set -euo pipefail
+          # Assigned first: inside the echo, a failing list would still write
+          # an empty output and the matrix would fail with a vaguer error.
+          names=$(.github/scripts/release-track.sh list)
+          echo "names=${names}" >> "$GITHUB_OUTPUT"
+
+  prepare:
+    name: ${{ matrix.track }}
+    needs: tracks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Push release/<track> (when the App is not configured).
+      contents: write
+      # Open, update and close the release PR.
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        track: ${{ fromJSON(needs.tracks.outputs.names) }}
+    # One run per track at a time; two pushes in quick succession would
+    # otherwise race to force-push the same branch.
+    concurrency:
+      group: release-pr-${{ matrix.track }}
+      cancel-in-progress: false
+    steps:
+      # The release identity: an org GitHub App. A PR opened with GITHUB_TOKEN
+      # starts no workflows, so its required checks would never run and it
+      # could never be merged. Falls back to GITHUB_TOKEN when the App is not
+      # configured, which still prepares the PR but leaves CI to a human.
+      - id: app
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Only what this job does with it; the token is scoped to this repository.
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # The whole history and every tag: the version is computed from the
+          # commits since the track's last tag.
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || github.token }}
+
+      - name: Install git-cliff
+        run: .github/scripts/install-git-cliff.sh
+
+      - name: What the next version would be
+        id: next
+        env:
+          TRACK: ${{ matrix.track }}
+        run: |
+          # pipefail, or tee's success would hide a release-track.sh failure.
+          set -euo pipefail
+          .github/scripts/release-track.sh next "$TRACK" | tee -a "$GITHUB_OUTPUT"
+
+      # Nothing to release any more (say a feat was reverted without a
+      # `revert:` title): a release PR left open would cut a stale version.
+      - name: Close a release PR that no longer applies
+        if: steps.next.outputs.release == 'no'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          TRACK: ${{ matrix.track }}
+        run: |
+          set -euo pipefail
+          open=$(gh pr list --head "release/${TRACK}" --base main --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -z "$open" ]; then
+            echo "no open release PR for ${TRACK}"
+            exit 0
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${open}/comments" \
+            -f body="Nothing releasable for ${TRACK} since its last tag any more, so this release is closed. The next releasable merge opens a new one." >/dev/null
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/pulls/${open}" -f state=closed --jq .html_url
+
+      - name: Write the changelog and bump the manifest
+        if: steps.next.outputs.release == 'yes'
+        env:
+          TRACK: ${{ matrix.track }}
+          NEXT: ${{ steps.next.outputs.next }}
+        run: .github/scripts/release-track.sh bump "$TRACK" "$NEXT"
+
+      - name: Open or update the release PR
+        if: steps.next.outputs.release == 'yes'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          TRACK: ${{ matrix.track }}
+          NEXT: ${{ steps.next.outputs.next }}
+        run: |
+          set -euo pipefail
+          branch="release/${TRACK}"
+          title="release(${TRACK}): v${NEXT}"
+          manifest=$(.github/scripts/release-track.sh get "$TRACK" manifest)
+          changelog=$(.github/scripts/release-track.sh get "$TRACK" changelog)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "$manifest" "$changelog"
+          if git diff --cached --quiet; then
+            echo "nothing changed since the last run"
+            exit 0
+          fi
+          printf '%s\n' \
+            "$title" \
+            "" \
+            "The manifest moves ahead of the tag so the tag points at a commit" \
+            "whose version already matches it. Prepared by the release-pr" \
+            "workflow; merging this is the release." \
+            | git commit -q -F -
+          # Unchanged release (a merge outside this track's paths, say): leave
+          # the branch alone, so its checks and any approval stay put.
+          if git rev-parse -q --verify "refs/remotes/origin/${branch}" >/dev/null \
+            && git diff --quiet "origin/${branch}" HEAD -- "$manifest" "$changelog"; then
+            echo "release/${TRACK} already has this release; not pushing"
+          else
+            # Force, because this branch is the bot's alone and is rebuilt
+            # from main every time. Nobody should be committing to it.
+            git push -f origin "$branch"
+          fi
+
+          case "$(.github/scripts/release-track.sh get "$TRACK" ship)" in
+            testflight) ships="tags it \`${TRACK}-v${NEXT}\` and uploads that build to TestFlight for external testers (Beta App Review for the first build of a version)." ;;
+            vercel) ships="tags it \`${TRACK}-v${NEXT}\` and fast-forwards \`production/${TRACK}\`, which Vercel deploys to production." ;;
+            *) ships="tags it \`${TRACK}-v${NEXT}\` and creates the GitHub Release." ;;
+          esac
+          body=$(printf '%s\n' \
+            "Merging this cuts **${TRACK} v${NEXT}**. It ${ships}" \
+            "" \
+            "This PR rewrites itself on every merge to main that changes the release." \
+            "Do not commit to it: the branch is force-pushed. The notes come from the" \
+            "squashed PR titles, so fix wording at the source (a PR title, or" \
+            "\`cliff.toml\` for grouping), or edit the changelog on main after the release." \
+            "" \
+            "---")
+          notes=$(.github/scripts/release-track.sh notes "$TRACK" "$NEXT" | sed -n '1,80p')
+          full=$(printf '%s\n\n%s\n' "$body" "$notes")
+          # An explicit search for an OPEN pull request. `gh pr view <branch>`
+          # falls back to the last merged one and would rewrite that instead.
+          open=$(gh pr list --head "$branch" --base main --state open \
+            --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          repo="${GITHUB_REPOSITORY}"
+          if [ -n "$open" ]; then
+            echo "updating #${open}"
+            jq -n --arg title "$title" --arg body "$full" '{title:$title, body:$body}' \
+              | gh api -X PATCH "repos/${repo}/pulls/${open}" --input - --jq .html_url
+          else
+            echo "opening a new release PR"
+            jq -n --arg title "$title" --arg body "$full" --arg head "$branch" \
+              '{title:$title, body:$body, head:$head, base:"main"}' \
+              | gh api -X POST "repos/${repo}/pulls" --input - --jq .html_url
+          fi

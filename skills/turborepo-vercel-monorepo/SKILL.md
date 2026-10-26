@@ -55,7 +55,7 @@ and new ones must be too.
    Swift app is already at the root. Name the scope and the apps; app folder
    names become Vercel project names and, with release tracks, tag prefixes.
 2. **Root files** from the templates. `packageManager` pins pnpm (Corepack
-   and Vercel both read it); `engines.node` and `.node-version` agree.
+   reads it; Vercel does only with `ENABLE_EXPERIMENTAL_COREPACK=1` set); `engines.node` and `.node-version` agree.
 3. **Apps.** Copy `apps/api` and `apps/web`, or create a real site in
    `apps/web` (for Next.js, `pnpm create next-app apps/web`, then give its
    `package.json` the scoped name and `"version": "0.1.0"`). Every workspace

@@ -40,13 +40,13 @@ while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
 prefix="${track}-v"
 
 # git-cliff wants globs; git log wants pathspecs. Same list, two spellings: a
-# directory becomes dir/**, a file stays as it is. "." is the whole repository
-# (a repo that ships one app): no filter at all.
+# path is passed both as itself (a file) and as path/** (a directory), so a
+# deleted file still matches as it does for git log. "." is the whole
+# repository (a repo that ships one app): no filter at all.
 cliff_paths=()
 for p in "${paths[@]}"; do
-  if [ "$p" = . ]; then cliff_paths=(); break
-  elif [ -f "$p" ]; then cliff_paths+=(--include-path "$p")
-  else cliff_paths+=(--include-path "$p/**"); fi
+  if [ "$p" = . ]; then cliff_paths=(); break; fi
+  cliff_paths+=(--include-path "$p" --include-path "$p/**")
 done
 # ${a[@]+…}: an empty array is "unbound" to bash 3.2 under set -u.
 cliff() { git cliff --tag-pattern "^${prefix}[0-9]" ${cliff_paths[@]+"${cliff_paths[@]}"} "$@"; }
@@ -58,7 +58,14 @@ current() {
     pbxproj)
       # One MARKETING_VERSION per target and configuration. They must agree (App
       # Store Connect rejects an extension whose version differs from its app),
-      # so a project where they do not is an error, not a guess.
+      # so a project where they do not is an error, not a guess. So is one the
+      # parser cannot read (a $(VARIABLE)), which a bump would leave behind.
+      unreadable=$(grep -E '^[[:space:]]*MARKETING_VERSION = ' "$manifest" \
+        | grep -vcE '^[[:space:]]*MARKETING_VERSION = "?[0-9][^";]*"?;$' || true)
+      if [ "$unreadable" -gt 0 ]; then
+        echo "$manifest has $unreadable MARKETING_VERSION line(s) that are not a plain version; set every one to X.Y.Z first" >&2
+        exit 1
+      fi
       versions=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = "\{0,1\}\([0-9][^";]*\)"\{0,1\};$/\1/p' "$manifest" | sort -u)
       if [ "$(printf '%s\n' "$versions" | grep -c .)" -gt 1 ]; then
         echo "$manifest has several MARKETING_VERSION values ($(paste -sd ' ' - <<< "$versions")); make them one first" >&2

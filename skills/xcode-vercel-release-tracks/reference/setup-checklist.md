@@ -82,11 +82,15 @@ first deployment always goes to production.
 
 - [ ] Connect Neon through the Vercel Marketplace integration for Production
       and Preview, with *Create database branch for deployment* on for Preview
-      (PR previews get throwaway `preview/<branch>` databases).
+      (PR previews get throwaway `preview/<branch>` databases). Each is a full
+      copy of its parent: with customer data in production, branch previews
+      from a masked or synthetic-data parent, or leave branching off.
 - [ ] Create a branch named **`staging`** from production (or from an
       anonymised branch if production holds personal data).
-- [ ] In Vercel, add `DATABASE_URL` (and the pooled variant) scoped to the
-      `staging` environment only, pointing at that branch.
+- [ ] In Vercel, `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in the `staging`
+      environment only, pointing at that branch: through the Marketplace
+      connection where it can target the custom environment and that branch
+      (Pro/Enterprise, since September 2026), otherwise by hand.
 - [ ] Run migrations in the build (or a deploy step) against the deployment's
       own `DATABASE_URL`, so staging migrates on every main deploy and
       production on every tag.

@@ -56,10 +56,11 @@ Development, Preview and Production.
 - **Preview branching** (tick *Create database branch for deployment*): each
   preview deployment gets a copy-on-write branch `preview/<git-branch>` of
   the default branch, with its connection variables injected into that
-  deployment only. A branch is a full copy of its parent's data, so preview
-  code can read everything in it: if the default branch holds customer data,
-  point preview branching at a masked or synthetic-data parent first, or
-  leave it off. Branches are deleted with their deployments, which Vercel
+  deployment only. A branch is a full copy of the default branch's data,
+  and the default branch is the one Production uses, so preview code can
+  read production's data: if that includes customer data, leave automatic
+  branching off and point Preview at a database built from an anonymised or
+  synthetic branch instead. Branches are deleted with their deployments, which Vercel
   keeps for months by default, so prune old ones (the public skill
   vercel-preview-cleanup helps).
 - **Migrations** run in the build against the deployment's own database: set
@@ -71,8 +72,8 @@ Development, Preview and Production.
   environment pointing at it. Since September 2026 Marketplace connections
   can target custom environments on Pro and Enterprise
   (`vercel integration add neon --environment staging`, or the dashboard),
-  but check which Neon branch the injected URLs point at: staging must not
-  get production's. Where that cannot pick the `staging` branch, scope the
+  but check which Neon branch the injected URLs point at: the staging
+  environment must not receive production connection URLs. Where that cannot pick the `staging` branch, scope the
   two variables to the `staging` environment by hand.
 - Pull variables for local work with `vercel env pull apps/<app>/.env.local`
   (git-ignored by `.env*.local`).

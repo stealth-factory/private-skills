@@ -1,17 +1,26 @@
 ---
 name: xcode-vercel-release-tracks
-description: Set up semantic-versioned release tracks in a monorepo that ships an Xcode app through TestFlight and web apps or APIs on Vercel — one main branch, a version, changelog and <track>-vX.Y.Z tag per deployable, a standing release PR per track, main builds to TestFlight internal and a Vercel staging environment, tags to TestFlight external (Beta App Review) and Vercel production. Use when asked to "set up releases", "semantic versioning", "auto versioning", "release tracks", "only tagged builds go to TestFlight", "staging vs production on Vercel", "release PR like opscope", or to add, change or debug release-pr.yml / tag-release.yml / testflight.yml / release-tracks.json in such a repo. For one-off TestFlight uploads without versioning, just run xcodebuild; this skill is for the whole release system.
+description: Set up semantic-versioned releases for an Xcode app shipped through TestFlight, either on its own in a plain Xcode app repo or as one track of a monorepo that also ships web apps or APIs on Vercel — one main branch, a version, changelog and <track>-vX.Y.Z tag per deployable, a standing release PR per track, main builds to TestFlight internal (and a Vercel staging environment), tags to TestFlight external with Beta App Review (and Vercel production). Use when asked to "set up releases", "semantic versioning", "auto versioning", "release tracks", "release PR like opscope", "only tagged builds go to TestFlight", "internal vs external testers", "staging vs production on Vercel", or to add, change or debug release-pr.yml / tag-release.yml / testflight.yml / release-tracks.json. Laying out the monorepo itself (pnpm, Turborepo, Vercel projects, Neon) is the sibling skill turborepo-vercel-monorepo; for a one-off TestFlight upload without versioning, just run xcodebuild.
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # xcode-vercel-release-tracks
 
-Installs a release system into a monorepo with an Xcode app and one or more
-Vercel projects. Everything merges to one `main`; each deployable is a **track**
-with its own semver.
+Installs a release system for an Xcode app and, optionally, Vercel projects
+beside it. Everything merges to one `main`; each deployable is a **track** with
+its own semver. Pick the mode first:
+
+| Mode | Repo | Tracks | Skip |
+| --- | --- | --- | --- |
+| **Xcode app only** | a plain app repo (`App.xcodeproj` or `project.yml` at or near the root) | one `apple` track, `paths: ["."]` | Vercel, Neon, `vercel.json`, `neon-refresh-staging.yml`, the `production/*` ruleset |
+| **Monorepo** | Turborepo/pnpm with `apps/apple`, `apps/api`, `apps/web`, … (the sibling skill turborepo-vercel-monorepo lays it out) | `apple` plus one per Vercel project | nothing; drop the Apple files if there is no app |
+
+Same workflows and script in both: a mode is only what `release-tracks.json`
+lists and which templates you copy. Start Xcode-only and add Vercel tracks
+later without changing what is already there.
 
 | Stage | Vercel track | Apple track |
 | --- | --- | --- |
@@ -28,7 +37,7 @@ From [templates/](templates/) into the target repo (`templates/github/` → `.gi
 
 | File | Job |
 | --- | --- |
-| `.github/release-tracks.json` | the per-repo config: tracks, their paths, manifest, kind, how they ship |
+| `.github/release-tracks.json` | the per-repo config: tracks, their paths, manifest, kind, how they ship. Start from `release-tracks.json` (monorepo) or `release-tracks.xcode.json` (Xcode app only) |
 | `.github/scripts/release-track.sh` | everything about a track: next version, bump, changelog notes |
 | `.github/scripts/install-git-cliff.sh` | pinned, checksummed git-cliff (Linux x86_64, macOS arm64) |
 | `cliff.toml` (repo root) | changelog format and bump rules, shared by all tracks |
@@ -43,20 +52,29 @@ From [templates/](templates/) into the target repo (`templates/github/` → `.gi
 | `ExportOptions.plist` | from the template if the app has none (set the team id) |
 
 Skip the Apple files if the repo has no app, the Vercel bits if it has no
-Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
+Vercel project, and `neon-refresh-staging.yml` if there is no Neon. Install
+the sibling skill turborepo-vercel-monorepo
+(`npx skills@1.5.23 add stealth-factory/private-skills --skill turborepo-vercel-monorepo`)
+when the monorepo itself does not exist yet.
 
 ## Procedure
 
 1. **Inventory the repo.** List the deployables and where each lives. For each,
    find the version source:
    - XcodeGen `project.yml` with `MARKETING_VERSION:` → kind `xcodegen`;
-   - an `.xcconfig` with `MARKETING_VERSION = …` → kind `xcconfig` (if the
-     version only lives in `project.pbxproj`, move it to an xcconfig first);
+   - an `.xcconfig` with `MARKETING_VERSION = …` → kind `xcconfig`;
+   - only `project.pbxproj` (Xcode's default) → kind `pbxproj`, manifest
+     `<App>.xcodeproj/project.pbxproj`. Every target and configuration must
+     already carry the same `MARKETING_VERSION` (the script refuses a mix, and
+     App Store Connect rejects extensions whose version differs from the app):
+     set them all to one `X.Y.Z` first, replacing Xcode's default `1.0`;
    - `package.json` → kind `package-json` (add `"version": "0.1.0"` if absent).
 
    Decide each track's `paths`: its own folder, plus shared code it ships
    (workspace packages, the lockfile). A shared path may belong to several
-   tracks. Repo-root CI and docs belong to none.
+   tracks. Repo-root CI and docs belong to none. **Xcode app only:** `paths`
+   is `["."]`, so every commit counts (a `ci:` or `docs:` commit still rides
+   along without starting a release), and the changelog is `./CHANGELOG.md`.
 2. **Write `.github/release-tracks.json`** from the template. `ship` is
    `testflight`, `vercel` or `none`. `changelog` defaults to
    `<first path>/CHANGELOG.md`. Track names become tag prefixes; keep them short
@@ -69,8 +87,11 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
    from; delete the "Pick the API" step and the setting if the app calls no
    API). Set the matrix `platform` list and the external step's `PLATFORMS`
    (`IOS`, `MAC_OS`, `TV_OS`, `VISION_OS`) to what the app ships, and list
-   every path of the Apple track in the `push.paths` filter. Delete the XcodeGen step for a
-   committed `.xcodeproj`. In `ExportOptions.plist` replace `__TEAM_ID__`; in
+   every path of the Apple track in the `push.paths` filter. **Xcode app only:**
+   `__APPLE_DIR__` is `.` (or the folder holding the project), delete the
+   `push.paths` filter, and delete the "Pick the API" step unless the app talks
+   to an API with separate staging and production URLs. Delete the XcodeGen
+   step for a committed `.xcodeproj`. In `ExportOptions.plist` replace `__TEAM_ID__`; in
    each `vercel.json` replace `__TRACK__`. Then
    `grep -rn '__[A-Z_]*__' .github cliff.toml <apple dir>/<export options> <app>/vercel.json`
    must print nothing. Check the app's Info.plist sets
@@ -90,7 +111,8 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
    touching one track and a `fix:` touching a shared path, then
    `release-track.sh next <track>` for each (expect minor / patch / no) and
    `release-track.sh bump` + `notes` (check the changelog section and the
-   manifest). Run `actionlint` on the workflows: the only expected finding is
+   manifest). Xcode app only: one `feat:` commit anywhere gives a minor bump,
+   and a `pbxproj` bump must change every `MARKETING_VERSION` line. Run `actionlint` on the workflows: the only expected finding is
    `concurrency.queue` in `testflight.yml` and `tag-release.yml`, which GitHub accepts. Delete the
    local tags afterwards.
 7. **Hand over the setup checklist**
@@ -101,7 +123,8 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
    environment, Deployment Protection, ignored build step), Neon (staging
    branch, scoped `DATABASE_URL`). Do the API-reachable items yourself when you
    have access; the Vercel and Neon items must be done **before** the first
-   push that links a new project.
+   push that links a new project. **Xcode app only:** the GitHub and App
+   Store Connect sections are the whole list.
 8. **Open the PR** titled e.g. `ci: release tracks and two-stage testflight`.
    `ci` does not cut a release. Say in the body that merging it lays baseline
    tags and ships nothing (the first real release of a Vercel track creates
@@ -125,6 +148,10 @@ Vercel project, and `neon-refresh-staging.yml` if there is no Neon.
   that went out is never re-tagged.
 - **`production/<track>` refused to move:** someone committed to it or `main`
   was rewritten. Investigate; do not force.
+- **Xcode app grows a backend:** move the app under `apps/apple` (or keep it
+  at the root and give it explicit `paths` instead of `.`), add the Vercel
+  tracks, and follow the Vercel and Neon parts of the checklist. The apple
+  track's tags and versions carry on unchanged.
 - **Add a track later:** add it to `release-tracks.json`, add its changelog and
   manifest version, merge; the next `tag-release.yml` run lays its baseline.
 

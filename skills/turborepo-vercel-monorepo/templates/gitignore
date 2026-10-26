@@ -1,0 +1,19 @@
+.DS_Store
+
+# JS workspace
+node_modules/
+.turbo/
+.vercel/
+dist/
+.env*.local
+
+# Swift app (drop if there is none). XcodeGen: the project is generated, not committed.
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+*.xcresult
+*.xcconfig.local
+Secrets.xcconfig

@@ -21,7 +21,8 @@ on:
   push:
     branches: [main]
     # Every path of the __APPLE_TRACK__ track in .github/release-tracks.json, so a change
-    # that counts towards its release also reaches internal testers.
+    # that counts towards its release also reaches internal testers. A track whose path is
+    # "." (a repo that only ships the app) deletes this filter: every push counts.
     paths:
       - "__APPLE_DIR__/**"
       - ".github/workflows/testflight.yml"

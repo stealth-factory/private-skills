@@ -33,25 +33,40 @@ kind=$(field kind)
 manifest=$(field manifest)
 changelog=$(field changelog)
 [ -n "$changelog" ] || changelog="$(jq -r '.paths[0]' <<< "$spec")/CHANGELOG.md"
+changelog="${changelog#./}"
 # A read loop, not mapfile: macOS still ships bash 3.2.
 paths=()
 while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
 prefix="${track}-v"
 
 # git-cliff wants globs; git log wants pathspecs. Same list, two spellings: a
-# directory becomes dir/**, a file stays as it is.
+# directory becomes dir/**, a file stays as it is. "." is the whole repository
+# (a repo that ships one app): no filter at all.
 cliff_paths=()
 for p in "${paths[@]}"; do
-  if [ -f "$p" ]; then cliff_paths+=(--include-path "$p"); else cliff_paths+=(--include-path "$p/**"); fi
+  if [ "$p" = . ]; then cliff_paths=(); break
+  elif [ -f "$p" ]; then cliff_paths+=(--include-path "$p")
+  else cliff_paths+=(--include-path "$p/**"); fi
 done
-cliff() { git cliff --tag-pattern "^${prefix}[0-9]" "${cliff_paths[@]}" "$@"; }
+# ${a[@]+…}: an empty array is "unbound" to bash 3.2 under set -u.
+cliff() { git cliff --tag-pattern "^${prefix}[0-9]" ${cliff_paths[@]+"${cliff_paths[@]}"} "$@"; }
 
 current() {
   case "$kind" in
     xcodegen) sed -n 's/^ *MARKETING_VERSION: *"\{0,1\}\([0-9][^"]*\)"\{0,1\} *$/\1/p' "$manifest" | head -1 ;;
     xcconfig) sed -n 's/^ *MARKETING_VERSION *= *\([0-9][^ ]*\) *$/\1/p' "$manifest" | head -1 ;;
+    pbxproj)
+      # One MARKETING_VERSION per target and configuration. They must agree (App
+      # Store Connect rejects an extension whose version differs from its app),
+      # so a project where they do not is an error, not a guess.
+      versions=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = "\{0,1\}\([0-9][^";]*\)"\{0,1\};$/\1/p' "$manifest" | sort -u)
+      if [ "$(printf '%s\n' "$versions" | grep -c .)" -gt 1 ]; then
+        echo "$manifest has several MARKETING_VERSION values ($(paste -sd ' ' - <<< "$versions")); make them one first" >&2
+        exit 1
+      fi
+      echo "$versions" ;;
     package-json) node -p 'require(require("path").resolve(process.argv[1])).version || ""' "$manifest" ;;
-    *) echo "unknown kind $kind for $track (xcodegen, xcconfig or package-json)" >&2; exit 1 ;;
+    *) echo "unknown kind $kind for $track (xcodegen, xcconfig, pbxproj or package-json)" >&2; exit 1 ;;
   esac
 }
 
@@ -112,6 +127,9 @@ case "$cmd" in
         CUR="$cur" NEXT="$next" perl -pi -e 's/^( *MARKETING_VERSION: *"?)\Q$ENV{CUR}\E("? *)$/$1$ENV{NEXT}$2/' "$manifest" ;;
       xcconfig)
         CUR="$cur" NEXT="$next" perl -pi -e 's/^( *MARKETING_VERSION *= *)\Q$ENV{CUR}\E( *)$/$1$ENV{NEXT}$2/' "$manifest" ;;
+      pbxproj)
+        # Every target and configuration, so extensions keep the app's version.
+        CUR="$cur" NEXT="$next" perl -pi -e 's/^(\s*MARKETING_VERSION = "?)\Q$ENV{CUR}\E("?;)$/$1$ENV{NEXT}$2/' "$manifest" ;;
       package-json)
         node -e '
           const fs = require("fs"), [file, version] = process.argv.slice(1);

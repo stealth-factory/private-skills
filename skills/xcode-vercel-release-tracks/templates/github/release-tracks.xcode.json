@@ -1,0 +1,13 @@
+{
+  "tracks": [
+    {
+      "name": "apple",
+      "kind": "pbxproj",
+      "manifest": "App.xcodeproj/project.pbxproj",
+      "paths": [
+        "."
+      ],
+      "ship": "testflight"
+    }
+  ]
+}

@@ -73,8 +73,15 @@ and new ones must be too.
    and Turborepo both build the dependency graph from it.
 6. **CI.** `js.yml` runs `pnpm install --frozen-lockfile` and
    `pnpm turbo run typecheck test build` for JS changes only; `apple.yml` runs
-   `swift test` and unsigned simulator/macOS builds for app changes only. Add
-   both job names to `main`'s required checks.
+   `swift test` and unsigned simulator/macOS builds for app changes only.
+   **Do not make either a required check as they stand:** a workflow skipped
+   by its `paths` filter never reports, so a required check from it stays
+   pending and blocks every PR that does not touch that side (docs-only PRs
+   block on both). To require them, drop the `pull_request` `paths` filters
+   and decide inside the job instead (a first step diffs against the base and
+   sets an output; the other steps run `if:` it says the side changed), so
+   the check always reports. Always-running
+   checks such as the PR title lint can be required as they are.
 7. **Verify locally:** `pnpm install`, then `pnpm turbo run typecheck test build`
    (all green), and for the app `xcodegen generate` plus a simulator build.
    Commit `pnpm-lock.yaml`.

@@ -15,8 +15,9 @@ For each app under `apps/` that deploys (not the Swift app):
    Directory* on: builds need `packages/` and the root lockfile. Vercel finds
    `pnpm-lock.yaml` at the repo root and installs the workspace from there.
 3. **Framework preset:** `Other` for `apps/api` (Vercel Functions are found
-   in `api/`; no build command needed), `Next.js` (or the site's framework)
-   for `apps/web`.
+   in `api/`; no build command needed) and for the static `apps/web` template
+   (Output Directory `public`). Pick `Next.js`, or the site's framework, only
+   once `apps/web` is replaced with that app.
 4. **Node.js version** matching `.node-version` / `engines.node`.
 5. **Build skip:** the template `vercel.json` `ignoreCommand` (see SKILL.md
    Gotchas). Leave the automatic *Skip deployment* for unaffected projects on

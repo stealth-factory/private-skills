@@ -57,22 +57,30 @@ burden, and the release machinery above does not solve it on its own: the
   the api release PR first, then the apple one".
 - **One path prefix for the whole API, from the first commit:** every
   endpoint lives under `/v1`. A breaking change is a `feat!:` (or `fix!:`) on
-  the api track, which bumps the major, and it adds `/v2` for **all**
-  endpoints at once; unchanged handlers are mounted under both prefixes.
-  `/v1` keeps serving the old shape until the old app builds are gone. The
-  prefix is not bumped per release and not per endpoint: `/v1` serves
-  `api-v1.0.0` through `api-v1.x.y`, and per-endpoint versions only pay off
-  with many independent clients.
+  the api track and adds `/v2` for **all** endpoints at once; unchanged
+  handlers are mounted under both prefixes. `/v1` keeps serving the old shape
+  until the old app builds are gone. The prefix is not bumped per release and
+  not per endpoint: `/v1` serves every release until the next breaking
+  change, and per-endpoint versions only pay off with many independent
+  clients. The release number and the prefix are deliberately separate:
+  `cliff.toml` bumps the major on a breaking change only from `1.0.0` (below
+  it, `0.x` convention, a breaking change bumps the minor), so a fresh API
+  at `0.1.0` that adds `/v2` releases as `0.2.0`, while an API at `1.4.2`
+  releases as `2.0.0`. The prefix tracks shipped app builds, not semver.
 - **Handshake.** The app sends its marketing version and build number in a
   header (`User-Agent` or `X-App-Version`); the API exposes a minimum
   supported app version (on the health endpoint or a dedicated one) so the
   app can show an update prompt instead of failing on a removed shape, and so
   the logs show which builds still call each prefix.
 - **Rollback, not routing.** A bad api release is undone with Vercel's
-  instant rollback (promote the previous deployment); do not route old app
-  builds to old deployment URLs. Old deployments stay reachable, but they
-  share the live database, never receive fixes or rotated secrets, and sit
-  behind Deployment Protection; and the app only knows the fixed domain.
+  instant rollback (promote the previous deployment), but only to a
+  deployment that still serves every shipped app build: once `/v2` and the
+  app that needs it are out, a deployment without `/v2` is not a valid
+  rollback target, and the fix rolls forward as a patch instead. Do not
+  route old app builds to old deployment URLs. Old deployments stay
+  reachable, but they share the live database, never receive fixes or
+  rotated secrets, and sit behind Deployment Protection; and the app only
+  knows the fixed domain.
 - **Escape hatch for a long-lived major:** if `/v1` must stay frozen for a
   long time while `/v2` evolves, give it a second Vercel project (`api-v1`,
   its own production branch and track) and `rewrite` `/v1/*` to it from the

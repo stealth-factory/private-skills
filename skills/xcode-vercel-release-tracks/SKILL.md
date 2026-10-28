@@ -108,8 +108,9 @@ when the monorepo itself does not exist yet.
    scope is a changelog label and does not pick the track. If the app calls
    an API in the repo, also the compatibility rules: the API is additive by
    default because shipped app builds keep calling it, every endpoint lives
-   under `/v1`, and only a breaking change (`feat!:` on the api track) adds
-   `/v2` for all endpoints while `/v1` stays until old builds are gone
+   under `/v1`, and only a breaking change (`feat!:` on the api track; a
+   major bump from `1.0.0`, a minor bump below it) adds `/v2` for all
+   endpoints while `/v1` stays until old builds are gone
    ([reference/design.md](reference/design.md), "API compatibility").
 6. **Verify locally before pushing** (in a scratch clone, never pushed):
    install git-cliff, tag each track's baseline locally, make a `feat:` commit
@@ -161,8 +162,10 @@ when the monorepo itself does not exist yet.
   every endpoint (unchanged handlers mounted under both prefixes), merged and
   released **before** the app release that needs it. Keep `/v1` until the
   minimum supported app version passes the last build that used it. Undo a
-  bad api release with Vercel's instant rollback, never by routing old app
-  builds to old deployment URLs.
+  bad api release with Vercel's instant rollback only to a deployment that
+  still serves every shipped app build (one without `/v2` is not a target
+  once an app needs it; roll forward with a patch instead), and never by
+  routing old app builds to old deployment URLs.
 - **Add a track later:** add it to `release-tracks.json`, add its changelog and
   manifest version, merge; the next `tag-release.yml` run lays its baseline.
 

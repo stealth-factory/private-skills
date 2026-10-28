@@ -1,0 +1,4 @@
+# A Swift app under apps/ has no package.json, so pnpm and Turbo skip it.
+packages:
+  - apps/*
+  - packages/*

@@ -2,7 +2,10 @@
 
 Everything outside the repo that the workflows rely on. Hand the user the parts
 only they can do; do the API-reachable parts yourself when you have the access.
-Order matters where marked.
+Order matters where marked. **Xcode app only:** GitHub (without the
+`production/*` ruleset) and App Store Connect are the whole list; the API URL
+variables apply only if the app calls an API with separate staging and
+production URLs.
 
 ## GitHub (per repo, plus once per org)
 
@@ -66,9 +69,12 @@ first deployment always goes to production.
       the `main` branch and scope staging env vars to Preview + branch `main`.
 - [ ] **Deployment Protection**: off for the staging environment of any project
       an app build calls (an API). Keep it on for web previews.
-- [ ] **Ignored Build Step**: `npx turbo-ignore` (Turborepo) or
-      `turbo query affected --base=$VERCEL_GIT_PREVIOUS_SHA --packages <pkg> --exit-code`,
-      so an unrelated change does not rebuild the project.
+- [ ] **Build skip**: the `ignoreCommand` in each app's `vercel.json` from the
+      sibling skill turborepo-vercel-monorepo (a `git diff` over the app and
+      what it builds from), or
+      `turbo query affected --base=$VERCEL_GIT_PREVIOUS_SHA --packages <pkg> --exit-code`.
+      Vercel's automatic skip alone rebuilds every project on a Swift-only
+      commit, because the app folder is not a workspace package.
 - [ ] The app's `vercel.json` carries the `git.deploymentEnabled` block from
       the template (other tracks' production branches off).
 
@@ -76,11 +82,17 @@ first deployment always goes to production.
 
 - [ ] Connect Neon through the Vercel Marketplace integration for Production
       and Preview, with *Create database branch for deployment* on for Preview
-      (PR previews get throwaway `preview/<branch>` databases).
+      (PR previews get throwaway `preview/<branch>` databases). Each is a full
+      copy of the Neon project's default branch, which is also the one the
+      integration connects to Production, so with customer data in production
+      leave automatic branching off and give previews a database built from
+      an anonymised or synthetic branch instead.
 - [ ] Create a branch named **`staging`** from production (or from an
       anonymised branch if production holds personal data).
-- [ ] In Vercel, add `DATABASE_URL` (and the pooled variant) scoped to the
-      `staging` environment only, pointing at that branch.
+- [ ] In Vercel, `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in the `staging`
+      environment only, pointing at that branch: through the Marketplace
+      connection where it can target the custom environment and that branch
+      (Pro/Enterprise, since September 2026), otherwise by hand.
 - [ ] Run migrations in the build (or a deploy step) against the deployment's
       own `DATABASE_URL`, so staging migrates on every main deploy and
       production on every tag.

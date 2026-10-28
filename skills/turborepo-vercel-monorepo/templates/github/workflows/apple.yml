@@ -1,0 +1,62 @@
+name: Apple
+
+# Tests and compiles the Swift app on every PR that touches it. Unsigned: nothing here needs a team or an App Store
+# Connect key. Uploads are testflight.yml's job (xcode-vercel-release-tracks).
+
+on:
+  pull_request:
+    paths: &apple-paths
+      - "__APPLE_DIR__/**"
+      - ".github/workflows/apple.yml"
+  push:
+    branches: [main]
+    paths: *apple-paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apple-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: __APPLE_DIR__
+
+jobs:
+  check:
+    name: Test and build
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # One step per local Swift package with tests; delete if there are none.
+      - name: Test __SWIFT_PACKAGE__
+        working-directory: __APPLE_DIR__/Packages/__SWIFT_PACKAGE__
+        run: swift test
+
+      # Delete for a committed .xcodeproj.
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild build -project __XCODE_PROJECT__ -scheme __SCHEME__ \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Ad-hoc signed (no team needed), so the sandbox entitlements the Mac App Store requires are embedded and could
+      # be checked with `codesign -d --entitlements -`. Delete if the app does not ship on macOS.
+      - name: Build for macOS
+        run: |
+          xcodebuild build -project __XCODE_PROJECT__ -scheme __SCHEME__ \
+            -destination 'generic/platform=macOS' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=

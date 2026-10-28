@@ -37,7 +37,7 @@ jobs:
           auth=(-H "authorization: Bearer ${NEON_API_KEY}" -H "accept: application/json")
           # The list is paginated, search or not: follow the cursor until an
           # exact match turns up or the pages run out.
-          branch= cursor=
+          branch='' cursor=''
           while :; do
             page=$(curl -fsS "${auth[@]}" --get --data-urlencode search=staging \
               ${cursor:+--data-urlencode "cursor=$cursor"} "$api/branches")

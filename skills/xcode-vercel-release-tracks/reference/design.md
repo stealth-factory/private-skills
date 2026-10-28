@@ -43,6 +43,43 @@ Read when a user asks *why*, wants to change the shape, or a repo does not fit.
 - **GITHUB_TOKEN limits.** A PR opened with it runs no workflows; a tag pushed with it starts none. Release PRs use the release GitHub App's token; tags stay on GITHUB_TOKEN and `tag-release.yml` dispatches `testflight.yml` explicitly.
 - **Squash title.** The squash commit must be the PR title, or a single-commit PR lands its commit message instead and the title check proves nothing.
 
+## API compatibility for native apps
+
+Web clients always run the latest deployment. App Store users do not: a build
+a user installed months ago keeps calling the API, and Vercel serves one
+production deployment per project. So the API carries the compatibility
+burden, and the release machinery above does not solve it on its own: the
+`api-vX.Y.Z` tag says *what* is deployed, not *who* can still talk to it.
+
+- **Additive by default.** Add fields and endpoints; never rename, remove or
+  change the meaning of one that a shipped build reads. Most api releases then
+  need no compatibility work, and "apple 1.3 needs api 1.0.3" is just "merge
+  the api release PR first, then the apple one".
+- **One path prefix for the whole API, from the first commit:** every
+  endpoint lives under `/v1`. A breaking change is a `feat!:` (or `fix!:`) on
+  the api track, which bumps the major, and it adds `/v2` for **all**
+  endpoints at once; unchanged handlers are mounted under both prefixes.
+  `/v1` keeps serving the old shape until the old app builds are gone. The
+  prefix is not bumped per release and not per endpoint: `/v1` serves
+  `api-v1.0.0` through `api-v1.x.y`, and per-endpoint versions only pay off
+  with many independent clients.
+- **Handshake.** The app sends its marketing version and build number in a
+  header (`User-Agent` or `X-App-Version`); the API exposes a minimum
+  supported app version (on the health endpoint or a dedicated one) so the
+  app can show an update prompt instead of failing on a removed shape, and so
+  the logs show which builds still call each prefix.
+- **Rollback, not routing.** A bad api release is undone with Vercel's
+  instant rollback (promote the previous deployment); do not route old app
+  builds to old deployment URLs. Old deployments stay reachable, but they
+  share the live database, never receive fixes or rotated secrets, and sit
+  behind Deployment Protection; and the app only knows the fixed domain.
+- **Escape hatch for a long-lived major:** if `/v1` must stay frozen for a
+  long time while `/v2` evolves, give it a second Vercel project (`api-v1`,
+  its own production branch and track) and `rewrite` `/v1/*` to it from the
+  main API project. One domain, no router code of your own.
+
+Decided 2026-10-28 for Canary; applies to every app this skill installs.
+
 ## Hotfixes (not automated)
 
 A fix for one track carries everything merged to main before it. For an urgent fix to an old release: branch from the tag, cherry-pick, bump the manifest, tag `<track>-vX.Y.Z+1` by hand from that branch, and push `production/<track>` to it by hand (an admin bypass of the ruleset). Merge the fix to main too.

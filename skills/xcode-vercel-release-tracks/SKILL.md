@@ -1,10 +1,10 @@
 ---
 name: xcode-vercel-release-tracks
-description: Set up semantic-versioned releases for an Xcode app shipped through TestFlight, either on its own in a plain Xcode app repo or as one track of a monorepo that also ships web apps or APIs on Vercel — one main branch, a version, changelog and <track>-vX.Y.Z tag per deployable, a standing release PR per track, main builds to TestFlight internal (and a Vercel staging environment), tags to TestFlight external with Beta App Review (and Vercel production). Use when asked to "set up releases", "semantic versioning", "auto versioning", "release tracks", "release PR like opscope", "only tagged builds go to TestFlight", "internal vs external testers", "staging vs production on Vercel", or to add, change or debug release-pr.yml / tag-release.yml / testflight.yml / release-tracks.json. Laying out the monorepo itself (pnpm, Turborepo, Vercel projects, Neon) is the sibling skill turborepo-vercel-monorepo; for a one-off TestFlight upload without versioning, just run xcodebuild.
+description: Set up semantic-versioned releases for an Xcode app shipped through TestFlight, either on its own in a plain Xcode app repo or as one track of a monorepo that also ships web apps or APIs on Vercel — one main branch, a version, changelog and <track>-vX.Y.Z tag per deployable, a standing release PR per track, main builds to TestFlight internal (and a Vercel staging environment), tags to TestFlight external with Beta App Review (and Vercel production). Use when asked to "set up releases", "semantic versioning", "auto versioning", "release tracks", "release PR like opscope", "only tagged builds go to TestFlight", "internal vs external testers", "staging vs production on Vercel", "should we version the API", "/v1 prefix", "old app builds still call the API", or to add, change or debug release-pr.yml / tag-release.yml / testflight.yml / release-tracks.json. Laying out the monorepo itself (pnpm, Turborepo, Vercel projects, Neon) is the sibling skill turborepo-vercel-monorepo; for a one-off TestFlight upload without versioning, just run xcodebuild.
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # xcode-vercel-release-tracks
@@ -105,7 +105,12 @@ when the monorepo itself does not exist yet.
    outside a release PR", "never commit to `production/*`", and the PR title
    rule: `type(scope): subject`, subject lowercase, no full stop, `!` for
    breaking; `feat`/`fix`/`perf`/`revert` release, other types ride along; the
-   scope is a changelog label and does not pick the track.
+   scope is a changelog label and does not pick the track. If the app calls
+   an API in the repo, also the compatibility rules: the API is additive by
+   default because shipped app builds keep calling it, every endpoint lives
+   under `/v1`, and only a breaking change (`feat!:` on the api track) adds
+   `/v2` for all endpoints while `/v1` stays until old builds are gone
+   ([reference/design.md](reference/design.md), "API compatibility").
 6. **Verify locally before pushing** (in a scratch clone, never pushed):
    install git-cliff, tag each track's baseline locally, make a `feat:` commit
    touching one track and a `fix:` touching a shared path, then
@@ -152,6 +157,12 @@ when the monorepo itself does not exist yet.
   at the root and give it explicit `paths` instead of `.`), add the Vercel
   tracks, and follow the Vercel and Neon parts of the checklist. The apple
   track's tags and versions carry on unchanged.
+- **Breaking API change:** a `feat!:` PR on the api track that adds `/v2` for
+  every endpoint (unchanged handlers mounted under both prefixes), merged and
+  released **before** the app release that needs it. Keep `/v1` until the
+  minimum supported app version passes the last build that used it. Undo a
+  bad api release with Vercel's instant rollback, never by routing old app
+  builds to old deployment URLs.
 - **Add a track later:** add it to `release-tracks.json`, add its changelog and
   manifest version, merge; the next `tag-release.yml` run lays its baseline.
 
@@ -161,5 +172,7 @@ when the monorepo itself does not exist yet.
   never make the build rewrite its source to match a tag.
 - Never commit to `release/*` or `production/*`; never force-push them.
 - Never ship a Vercel protection-bypass secret inside an app binary.
+- Never rename, remove or change the meaning of an API field or endpoint a
+  shipped app build reads outside a new `/v<n>` prefix.
 - Pin every action by commit SHA with the version in a comment, as the
   templates do.

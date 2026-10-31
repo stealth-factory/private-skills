@@ -109,10 +109,13 @@ and new ones must be too.
   and the site. The template `vercel.json` sets `ignoreCommand` to a
   `( [ -n "$VERCEL_GIT_PREVIOUS_SHA" ] && git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- . ../../packages … ) || exit 1`
   over the app and what it builds from: exit 0 skips, exit 1 builds, and any
-  other code is a failed deployment. The guard and `|| exit 1` matter: on a
-  project's first deployment `VERCEL_GIT_PREVIOUS_SHA` is empty, so a bare
-  `git diff --quiet ""` exits 128 (`fatal: bad revision ''`) and Vercel errors
-  instead of building (seen on Canary's first `canary-api` deploy, 2026-10-31;
+  other code is a failed deployment. The template itself returns only 0 or 1:
+  `|| exit 1` maps an empty or unreachable SHA, or any non-zero diff check, to
+  exit 1, so a Git error builds rather than failing the deployment. The guard
+  and `|| exit 1` matter: on a project's first deployment
+  `VERCEL_GIT_PREVIOUS_SHA` is empty, so a bare `git diff --quiet ""` returns
+  128 (`fatal: bad revision ''`) and Vercel errors instead of building (seen on
+  Canary's first `canary-api` deploy, 2026-10-31;
   the earlier note here that an empty SHA builds was wrong). Verified locally:
   empty or unreachable SHA builds, Swift-only change skips, `packages/` change
   builds. Add any other root file an app reads to its list.

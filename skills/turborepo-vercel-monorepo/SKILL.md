@@ -4,7 +4,7 @@ description: Lay out a pnpm + Turborepo monorepo that deploys each app to its ow
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # turborepo-vercel-monorepo
@@ -39,7 +39,7 @@ package name), `__SCOPE__` (package scope, e.g. `canary` for `@canary/api`),
 | --- | --- |
 | `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json` | repo root, as named |
 | `node-version`, `gitignore` | `.node-version`, merged into `.gitignore` (stored without the dot so they are not hidden or applied here) |
-| `apps/api/**` | a working Vercel Functions app: `GET /api/health`, vitest test, `tsc` typecheck |
+| `apps/api/**` | a working Vercel Functions app: `GET /api/health`, vitest test, `tsc` typecheck, and an empty `public/` so the first deploy has an output directory |
 | `apps/web/**` | a static holding page in `public/` |
 | `apps/*/vercel.json` | per-project Vercel config with the build skip (see Gotchas) |
 | `github/workflows/js.yml`, `apple.yml` | `.github/workflows/`; drop `apple.yml` and the `!__APPLE_DIR__/**` line when there is no app |
@@ -107,11 +107,15 @@ and new ones must be too.
   a file outside them (all of `apps/apple`, which has no `package.json`)
   counts as a change to every project, so each Swift commit rebuilds the API
   and the site. The template `vercel.json` sets `ignoreCommand` to a
-  `git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- . ../../packages …` over
-  the app and what it builds from: exit 0 skips, anything else (no previous
-  deployment, a commit outside Vercel's shallow clone) builds. Verified on a
-  scratch repo 2026-10-26: Swift-only change skips, `packages/` change builds,
-  empty previous SHA builds. Add any other root file an app reads to its list.
+  `( [ -n "$VERCEL_GIT_PREVIOUS_SHA" ] && git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- . ../../packages … ) || exit 1`
+  over the app and what it builds from: exit 0 skips, exit 1 builds, and any
+  other code is a failed deployment. The guard and `|| exit 1` matter: on a
+  project's first deployment `VERCEL_GIT_PREVIOUS_SHA` is empty, so a bare
+  `git diff --quiet ""` exits 128 (`fatal: bad revision ''`) and Vercel errors
+  instead of building (seen on Canary's first `canary-api` deploy, 2026-10-31;
+  the earlier note here that an empty SHA builds was wrong). Verified locally:
+  empty or unreachable SHA builds, Swift-only change skips, `packages/` change
+  builds. Add any other root file an app reads to its list.
   `turbo query affected --base=$VERCEL_GIT_PREVIOUS_SHA --packages <pkg> --exit-code`
   is Vercel's documented alternative when Turbo's graph is enough.
 - **`packages/` vs `Packages/`.** APFS is case-insensitive by default: a root
@@ -121,6 +125,11 @@ and new ones must be too.
 - **pnpm and Turbo skip the Swift app** because it has no `package.json`, and
   that is intended: it is not a JS package. Do not add one to "fix" Vercel
   skipping; the `ignoreCommand` handles that.
+- **A functions-only API needs a `public/` folder.** With no framework preset
+  and no build task, Vercel still looks for an output directory and fails with
+  `STATIC_BUILD_NO_OUT_DIR` ("No Output Directory named "public" found"). The
+  `apps/api` template ships `public/.gitkeep` for this; keep it. Nothing is
+  served from it.
 - **First deployment is production.** A newly linked Vercel project deploys
   its first build to production. Set the Root Directory, the Production
   Branch (with release tracks, `production/<app>`), the env vars and Neon first.

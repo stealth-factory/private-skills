@@ -133,9 +133,23 @@ jobs:
           # reviewed in the release PR.
           .github/scripts/release-track.sh notes "$TRACK" "$VERSION" > "$RUNNER_TEMP/notes.md"
           [ -s "$RUNNER_TEMP/notes.md" ] || { echo "no ${VERSION} section in the ${TRACK} changelog" >&2; exit 1; }
-          # Only app-store tracks are marked Latest: that is what people install.
+          # Latest goes to an app-store track's release: that is what people
+          # install. Until an app-store track has a GitHub Release (its baseline
+          # creates none), every release takes Latest, so the badge never stays
+          # on a tag from before the tracks.
           latest=false
-          [ "$SHIP" = testflight ] && latest=true
+          if [ "$SHIP" = testflight ]; then
+            latest=true
+          else
+            store_release=no
+            releases=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" --jq '.[] | select(.draft | not) | .tag_name')
+            for t in $(.github/scripts/release-track.sh list | jq -r '.[]'); do
+              [ "$(.github/scripts/release-track.sh get "$t" ship)" = testflight ] || continue
+              if grep -q "^${t}-v[0-9]" <<<"$releases"; then store_release=yes; fi
+            done
+            [ "$store_release" = no ] && latest=true
+          fi
+          echo "latest: ${latest}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "the ${TAG} release exists"
             exit 0

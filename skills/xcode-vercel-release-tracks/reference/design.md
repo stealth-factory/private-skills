@@ -21,6 +21,7 @@ Read when a user asks *why*, wants to change the shape, or a repo does not fit.
 - Only `feat`, `fix`, `perf`, `revert` and breaking changes start a release. Everything else rides along in the next changelog.
 - Release PR per track, `release(<track>): vX.Y.Z`, rebuilt on every merge to main. Merging it is the release decision. The manifest is bumped in that commit **before** the tag, and the build never edits its source to match a tag.
 - A track's first tag is a **baseline**: it marks what exists, ships nothing and gets no GitHub Release.
+- GitHub's **Latest** badge goes to an app-store (`testflight`) track's release, because that is what people install. Until such a release exists, every release takes Latest. Otherwise a repo whose apple track has only its baseline keeps the badge on whatever release held it before the tracks, often an old pre-track tag.
 - Adapted from stealth-factory/opscope's release-pr / tag-release / pr-title flow, which ships one product; this runs it once per track.
 
 ## Why these choices

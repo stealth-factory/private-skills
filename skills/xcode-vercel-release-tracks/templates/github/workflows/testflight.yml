@@ -208,6 +208,22 @@ jobs:
           version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$RUNNER_TEMP/App.xcarchive/Info.plist")
           echo "Uploaded $version ($BUILD_NUMBER) for ${{ matrix.platform }} (${{ needs.plan.outputs.stage }} testers). It shows in TestFlight after App Store Connect finishes processing." >> "$GITHUB_STEP_SUMMARY"
 
+      # Xcode signed on this fresh Mac by making a new Apple Development certificate ("Created via
+      # API") that nothing can use once the runner is wiped. Apple caps them per team and then
+      # refuses to sign, so revoke it now, pass or fail. It is found by serial number in this
+      # runner's keychain, which only this job used: a parallel platform job, or another repository
+      # building on the same Apple team, keeps its certificate. Never fails the upload; anything
+      # left behind is cleared with apple-certificates.yml.
+      - name: Revoke this build's development certificate
+        if: always()
+        continue-on-error: true
+        env:
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+        run: |
+          security find-certificate -a -p -c "Apple Development" > "$RUNNER_TEMP/signing.pem" || true
+          node "$GITHUB_WORKSPACE/.github/scripts/asc-certificates.mjs" revoke-own "$RUNNER_TEMP/signing.pem"
+
       - name: Remove API key
         if: always()
         run: rm -rf "$RUNNER_TEMP/private_keys"

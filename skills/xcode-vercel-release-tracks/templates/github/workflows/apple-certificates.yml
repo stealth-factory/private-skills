@@ -1,0 +1,70 @@
+name: Apple certificates
+
+# Revokes the Apple Development certificates that earlier TestFlight runs left
+# behind. Each run on a throwaway Mac made one, nothing can sign with
+# it once the runner is wiped, and enough of them stop Apple issuing a new one:
+# "Your account has reached the maximum number of certificates".
+#
+# testflight.yml revokes its own certificate at the end of every run, so
+# this is for clearing a backlog from before that, or after a run whose clean-up failed.
+# Leave "apply" off first to see the list. With apply it revokes every CI-made
+# development certificate on the Apple team, including ones other repositories'
+# workflows made, so apply only while no repository on the team is uploading:
+# the concurrency group below covers this repository only. Only development certificates whose
+# name says "Created via API" are revoked; one Xcode made on a person's Mac is
+# kept. Builds already on TestFlight or the App Store are not affected.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Revoke them (off lists them only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Shares testflight.yml's group so it never revokes the certificate of this
+# repository's build that is signing right now. queue: max, as there, so waiting
+# here never replaces a pending upload.
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  prune:
+    name: Development certificates created via the API
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install API key
+        env:
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_KEY_P8_BASE64: ${{ secrets.APP_STORE_KEY_P8_BASE64 }}
+        run: |
+          key="$RUNNER_TEMP/private_keys/AuthKey_$APP_STORE_KEY_ID.p8"
+          mkdir -p "$(dirname "$key")"
+          echo "$APP_STORE_KEY_P8_BASE64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          echo "APP_STORE_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: List or revoke
+        env:
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          # pipefail, so a failed list or revoke fails the run instead of tee's success.
+          set -o pipefail
+          if [ "$APPLY" = true ]; then flag=--apply; else flag=; fi
+          node .github/scripts/asc-certificates.mjs prune $flag | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/private_keys"

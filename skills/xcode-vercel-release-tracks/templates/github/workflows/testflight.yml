@@ -56,6 +56,7 @@ jobs:
       stage: ${{ steps.plan.outputs.stage }}
       version: ${{ steps.plan.outputs.version }}
       started: ${{ steps.plan.outputs.started }}
+      certificates: ${{ steps.certificates.outputs.before }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -112,6 +113,39 @@ jobs:
           echo "stage=$stage" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "TestFlight $stage build, version $version" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Each upload signs on a fresh Mac, where Xcode makes a new Apple Development certificate
+      # ("Created via API") that nothing can use once the runner is wiped. Apple caps them per
+      # team and then refuses to sign. Note which exist now, so the certificates job can revoke
+      # only the ones this run made. The snapshot is taken here, once, and not in the upload
+      # jobs: those run in parallel, and one platform must not revoke a certificate another is
+      # still signing with. A failed snapshot does not stop the upload; the clean-up then skips.
+      - name: Install API key
+        if: steps.plan.outputs.stage != 'skip'
+        env:
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_KEY_P8_BASE64: ${{ secrets.APP_STORE_KEY_P8_BASE64 }}
+        run: |
+          key="$RUNNER_TEMP/private_keys/AuthKey_$APP_STORE_KEY_ID.p8"
+          mkdir -p "$(dirname "$key")"
+          echo "$APP_STORE_KEY_P8_BASE64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          echo "APP_STORE_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: Snapshot development certificates
+        id: certificates
+        if: steps.plan.outputs.stage != 'skip'
+        continue-on-error: true
+        env:
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+        run: |
+          node .github/scripts/asc-certificates.mjs snapshot "$RUNNER_TEMP/certificates-before.json"
+          echo "before=$(cat "$RUNNER_TEMP/certificates-before.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Remove API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/private_keys"
 
   upload:
     name: Upload ${{ matrix.platform }} build
@@ -207,6 +241,51 @@ jobs:
         run: |
           version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$RUNNER_TEMP/App.xcarchive/Info.plist")
           echo "Uploaded $version ($BUILD_NUMBER) for ${{ matrix.platform }} (${{ needs.plan.outputs.stage }} testers). It shows in TestFlight after App Store Connect finishes processing." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/private_keys"
+
+  certificates:
+    name: Revoke this run's development certificates
+    needs: [plan, upload]
+    # After every upload has finished, passed, failed or cancelled, since a failed archive can
+    # still have made a certificate. Never fails the run: the builds are already out, and
+    # apple-certificates.yml clears anything left behind.
+    if: always() && needs.plan.outputs.stage != '' && needs.plan.outputs.stage != 'skip'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install API key
+        env:
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_KEY_P8_BASE64: ${{ secrets.APP_STORE_KEY_P8_BASE64 }}
+        run: |
+          key="$RUNNER_TEMP/private_keys/AuthKey_$APP_STORE_KEY_ID.p8"
+          mkdir -p "$(dirname "$key")"
+          echo "$APP_STORE_KEY_P8_BASE64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          echo "APP_STORE_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: Revoke new development certificates
+        env:
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+          BEFORE: ${{ needs.plan.outputs.certificates }}
+        run: |
+          # No snapshot leaves no file, and the script then revokes nothing and warns.
+          file="$RUNNER_TEMP/certificates-before.json"
+          if [ -n "$BEFORE" ]; then printf '%s' "$BEFORE" > "$file"; fi
+          set -o pipefail
+          node .github/scripts/asc-certificates.mjs revoke-new "$file" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Remove API key
         if: always()

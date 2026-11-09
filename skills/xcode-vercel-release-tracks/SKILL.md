@@ -4,7 +4,7 @@ description: Set up semantic-versioned releases for an Xcode app shipped through
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # xcode-vercel-release-tracks
@@ -46,6 +46,9 @@ From [templates/](templates/) into the target repo (`templates/github/` → `.gi
 | `.github/workflows/tag-release.yml` | on merge: tag, GitHub Release, then ship (TestFlight dispatch / production branch) |
 | `.github/workflows/testflight.yml` | main → internal; `<apple>-v*` tag → external + Beta App Review |
 | `.github/scripts/testflight-external.mjs` | App Store Connect API: wait, What to Test, external group, review |
+| `.github/scripts/asc-certificates.mjs` | revokes the Apple Development certificates CI signing leaves behind (snapshot, revoke-new, prune) |
+| `.github/scripts/asc-certificates.test.mjs` | its tests: `node --test '.github/scripts/*.test.mjs'`, no dependencies |
+| `.github/workflows/apple-certificates.yml` | manual: list, then revoke, every CI-made development certificate |
 | `.github/workflows/neon-refresh-staging.yml` | manual reset of a track's Neon `staging` branch |
 | `<track dir>/CHANGELOG.md` | from `templates/CHANGELOG.md`, one per track, hand-written baseline |
 | `<vercel app>/vercel.json` | merge in the `git.deploymentEnabled` block from `templates/vercel.json` |
@@ -119,8 +122,9 @@ when the monorepo itself does not exist yet.
    `release-track.sh bump` + `notes` (check the changelog section and the
    manifest). Xcode app only: one `feat:` commit anywhere gives a minor bump,
    and a `pbxproj` bump must change every `MARKETING_VERSION` line. Run `actionlint` on the workflows: the only expected finding is
-   `concurrency.queue` in `testflight.yml` and `tag-release.yml`, which GitHub accepts. Delete the
-   local tags afterwards.
+   `concurrency.queue` in `testflight.yml`, `apple-certificates.yml` and `tag-release.yml`, which
+   GitHub accepts. Run `node --test '.github/scripts/*.test.mjs'` (Node 22 needs the quoted glob,
+   not a directory). Delete the local tags afterwards.
 7. **Hand over the setup checklist**
    ([reference/setup-checklist.md](reference/setup-checklist.md)): GitHub
    (squash title, release App, `production/*` ruleset), App Store Connect
@@ -150,6 +154,16 @@ when the monorepo itself does not exist yet.
   (internal) or at the tag (external). Branch refs are refused by design.
   After a failed external step, re-run just the `external` job: it finds the
   builds by version and run start time.
+- **"Your account has reached the maximum number of certificates":** each
+  upload signs on a fresh Mac, and Xcode makes a new Apple Development
+  certificate there that nothing can use afterwards. `testflight.yml` snapshots
+  the team's certificates in its plan job and its `certificates` job revokes
+  the ones the run made, pass or fail. A backlog from before that, or a run
+  whose clean-up failed, is cleared with Actions → Apple certificates: run it
+  with *apply* off to see the list, then on. Only certificates named "Created
+  via API" are touched, never one a person's Xcode made, and revoking a
+  development certificate does not affect builds already on TestFlight or the
+  App Store.
 - **Beta App Review rejected:** fix, merge, and cut the next patch; a version
   that went out is never re-tagged.
 - **`production/<track>` refused to move:** someone committed to it or `main`

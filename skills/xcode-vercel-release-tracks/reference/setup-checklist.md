@@ -32,7 +32,7 @@ production URLs.
 
 - [ ] App record exists for the bundle id (all platforms you ship).
 - [ ] **Team API key**, Admin role (so `-allowProvisioningUpdates` can manage
-      signing). Secrets: `APP_STORE_KEY_ID`, `APP_STORE_ISSUER_ID`,
+      signing and revoke the development certificates CI leaves). Secrets: `APP_STORE_KEY_ID`, `APP_STORE_ISSUER_ID`,
       `APP_STORE_KEY_P8_BASE64` (`base64 -i AuthKey_<id>.p8`). Org secrets if
       several apps share the key.
 - [ ] **Internal group** with *Enable automatic distribution* ticked: every
@@ -106,4 +106,6 @@ first deployment always goes to production.
       creates it, and Vercel deploys production from it then.
 - [ ] The first `feat`/`fix` merge opens `release(<track>): …` PRs; their checks
       run (if not, the release App is missing).
-- [ ] A main build reached TestFlight internal testers.
+- [ ] A main build reached TestFlight internal testers, and its
+      `certificates` job revoked the development certificate it made (or said
+      the run left none).

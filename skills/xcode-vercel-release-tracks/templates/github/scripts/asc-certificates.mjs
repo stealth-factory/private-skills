@@ -28,7 +28,7 @@
 // No dependencies: Node 20+ has fetch and ES256 signing built in.
 
 import { X509Certificate, createSign } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 export const DEVELOPMENT_TYPES = ["DEVELOPMENT", "IOS_DEVELOPMENT"];
 const CI_MARKER = "Created via API";

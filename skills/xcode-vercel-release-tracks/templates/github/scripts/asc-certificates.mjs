@@ -29,6 +29,7 @@
 
 import { X509Certificate, createSign } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 export const DEVELOPMENT_TYPES = ["DEVELOPMENT", "IOS_DEVELOPMENT"];
 const CI_MARKER = "Created via API";
@@ -190,7 +191,7 @@ async function main([command, arg]) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2)).catch((error) => {
     console.error(`::error::${error.message}`);
     process.exit(1);

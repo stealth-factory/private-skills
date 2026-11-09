@@ -8,11 +8,16 @@
 // again, and once enough pile up Apple refuses to issue another.
 //
 // Commands:
-//   snapshot <file>      write the ids of the team's development certificates
-//   revoke-new <file>    revoke development certificates created via the API
-//                        that are not in <file>: the ones this run made
+//   revoke-own <pem>     revoke the development certificates whose serial
+//                        numbers are in <pem>: the certificates in this
+//                        runner's keychain, which this job made
 //   prune [--apply]      list every development certificate created via the
 //                        API, and revoke them with --apply
+//
+// revoke-own matches by serial number, so it never touches a certificate that
+// another job, or another repository building on the same Apple team, is still
+// signing with. Telling them apart by time (what existed before the build)
+// is not enough: the workflows' concurrency group only covers one repository.
 //
 // Only development certificates whose name says "Created via API" are ever
 // revoked. A certificate Xcode made on a person's Mac carries that person's
@@ -22,7 +27,7 @@
 // Environment: APP_STORE_KEY_ID, APP_STORE_ISSUER_ID, APP_STORE_KEY_PATH.
 // No dependencies: Node 20+ has fetch and ES256 signing built in.
 
-import { createSign } from "node:crypto";
+import { X509Certificate, createSign } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 export const DEVELOPMENT_TYPES = ["DEVELOPMENT", "IOS_DEVELOPMENT"];
@@ -37,10 +42,24 @@ export function isCiCertificate(cert) {
   );
 }
 
-/** CI certificates that were not there before the run. */
-export function newCiCertificates(current, before) {
-  const known = new Set(before);
-  return current.filter((cert) => !known.has(cert.id) && isCiCertificate(cert));
+/** A serial number in one spelling: upper-case hex, no separators or leading zeros. */
+export function normaliseSerial(serial) {
+  return String(serial ?? "")
+    .toUpperCase()
+    .replace(/[^0-9A-F]/g, "")
+    .replace(/^0+(?=.)/, "");
+}
+
+/** The serial numbers of every certificate in a PEM bundle (`security find-certificate -p`). */
+export function serialsFromPem(text) {
+  const blocks = text.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
+  return blocks.map((block) => normaliseSerial(new X509Certificate(block).serialNumber));
+}
+
+/** CI certificates whose serial number is one of `serials`: the ones this job holds. */
+export function ownCiCertificates(current, serials) {
+  const own = new Set(serials.map(normaliseSerial));
+  return current.filter((cert) => isCiCertificate(cert) && own.has(normaliseSerial(cert.attributes?.serialNumber)));
 }
 
 const describe = (cert) => {
@@ -129,31 +148,26 @@ async function revoke(certs) {
 
 async function main([command, arg]) {
   switch (command) {
-    case "snapshot": {
-      if (!arg) throw new Error("usage: snapshot <file>");
-      const certs = await listDevelopmentCertificates();
-      writeFileSync(arg, JSON.stringify(certs.map((cert) => cert.id)));
-      console.log(`${certs.length} development certificate(s) before the build.`);
-      return;
-    }
-    case "revoke-new": {
-      if (!arg) throw new Error("usage: revoke-new <file>");
-      // No snapshot: either the run stopped before it signed anything, or the
-      // snapshot step failed and the build went ahead. Without a baseline this
-      // run's certificate can't be told apart, so revoke nothing and say so.
-      if (!existsSync(arg)) {
+    case "revoke-own": {
+      if (!arg) throw new Error("usage: revoke-own <pem>");
+      // Nothing in the keychain: the job stopped before it signed, or Xcode
+      // kept the certificate somewhere the workflow did not look. Without a
+      // serial number this job's certificate can't be told from another
+      // job's, so revoke nothing and say so.
+      const serials = existsSync(arg) ? serialsFromPem(readFileSync(arg, "utf8")) : [];
+      if (serials.length === 0) {
         console.log(
-          "::warning::No certificate snapshot, so nothing was revoked. If the build signed, it may have left a development certificate; run the Apple certificates workflow to clear it.",
+          "::warning::No development certificate in this runner's keychain, so nothing was revoked. If the build signed, it may have left one; run the Apple certificates workflow to clear it.",
         );
         return;
       }
-      const fresh = newCiCertificates(await listDevelopmentCertificates(), JSON.parse(readFileSync(arg, "utf8")));
-      if (fresh.length === 0) {
-        console.log("This run left no new development certificate.");
+      const own = ownCiCertificates(await listDevelopmentCertificates(), serials);
+      if (own.length === 0) {
+        console.log("This job left no development certificate on the team.");
         return;
       }
       // A failed revoke is a warning, never a failed upload: the build is already out.
-      await revoke(fresh);
+      await revoke(own);
       return;
     }
     case "prune": {
@@ -172,7 +186,7 @@ async function main([command, arg]) {
       return;
     }
     default:
-      throw new Error("usage: asc-certificates.mjs snapshot <file> | revoke-new <file> | prune [--apply]");
+      throw new Error("usage: asc-certificates.mjs revoke-own <pem> | prune [--apply]");
   }
 }
 

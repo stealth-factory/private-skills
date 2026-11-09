@@ -11,26 +11,46 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { isCiCertificate, newCiCertificates } from "./asc-certificates.mjs";
+import { isCiCertificate, normaliseSerial, ownCiCertificates, serialsFromPem } from "./asc-certificates.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
 const scriptPath = join(HERE, "asc-certificates.mjs");
 
-const cert = (id, certificateType, name) => ({ id, attributes: { certificateType, name } });
-const mine = cert("MAC", "DEVELOPMENT", "Apple Development: A Person");
-const before = cert("OLD", "DEVELOPMENT", "Apple Development: Created via API");
-const fresh = cert("NEW", "DEVELOPMENT", "Apple Development: Created via API");
-const distribution = cert("DIST", "DISTRIBUTION", "Apple Distribution: Created via API");
+// A self-signed certificate with serial number A1B2C3D4E5F6 (written 00A1B2C3D4E5F6),
+// standing in for the one Xcode leaves in the runner's keychain.
+const KEYCHAIN_PEM = `-----BEGIN CERTIFICATE-----
+MIIBtjCCAVygAwIBAgIHAKGyw9Tl9jAKBggqhkjOPQQDAjA3MTUwMwYDVQQDDCxB
+cHBsZSBEZXZlbG9wbWVudDogQ3JlYXRlZCB2aWEgQVBJIChURUFNMTIzKTAeFw0y
+NjExMDkyMjMzMTJaFw0yNjExMTAyMjMzMTJaMDcxNTAzBgNVBAMMLEFwcGxlIERl
+dmVsb3BtZW50OiBDcmVhdGVkIHZpYSBBUEkgKFRFQU0xMjMpMFkwEwYHKoZIzj0C
+AQYIKoZIzj0DAQcDQgAEiymp+gcv0jpejBnADHPKPKuwz4xw6wK66IVXSUXfXi/G
+sGnB6AJwFpeKP8pa/JaViu/M0PitdjeVAYMDjrbjlqNTMFEwHQYDVR0OBBYEFCP1
+jBua/gWOaj+R0kWoVwzbxyTjMB8GA1UdIwQYMBaAFCP1jBua/gWOaj+R0kWoVwzb
+xyTjMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIgEYDkuM1eor8y
+xN8B6EmU07Iqs7c8lkod1ezdPdbCAZwCIQCvVBJltsBeJSiSz37MCUUKjuWgw9cg
+/qm5V7ShTiO9wg==
+-----END CERTIFICATE-----
+`;
+
+const cert = (id, certificateType, name, serialNumber) => ({
+  id,
+  attributes: { certificateType, name, serialNumber },
+});
+const mine = cert("MAC", "DEVELOPMENT", "Apple Development: A Person", "A1B2C3D4E5F6");
+const other = cert("OTHER", "DEVELOPMENT", "Apple Development: Created via API", "0BADC0FFEE");
+const own = cert("OWN", "DEVELOPMENT", "Apple Development: Created via API", "a1b2c3d4e5f6");
+const distribution = cert("DIST", "DISTRIBUTION", "Apple Distribution: Created via API", "A1B2C3D4E5F6");
 
 // Runs the real command against a stub App Store Connect: it serves the
 // certificate list (failing the first `failFirst` reads with a 503) and
 // records every request.
-function run(args, certs, failFirst = 0) {
+function run(args, certs, failFirst = 0, files = {}) {
   const dir = mkdtempSync(join(tmpdir(), "asc-"));
   try {
     const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
     writeFileSync(join(dir, "key.p8"), privateKey.export({ type: "pkcs8", format: "pem" }));
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
     const log = join(dir, "requests.log");
     writeFileSync(
       join(dir, "stub.mjs"),
@@ -63,98 +83,88 @@ globalThis.fetch = async (url, { method }) => {
       status = error.status;
     }
     const requests = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
-    const snapshot = existsSync(join(dir, "before.json")) ? readFileSync(join(dir, "before.json"), "utf8") : null;
-    return { status, stdout, deletes: requests.filter((r) => r.startsWith("DELETE")), requests, snapshot };
+    return { status, stdout, deletes: requests.filter((r) => r.startsWith("DELETE")), requests };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 describe("TestFlight certificate clean-up", () => {
-  it("revokes only API-made development certificates, and only new ones after a run", () => {
+  it("revokes only API-made development certificates, and only this job's by serial number", () => {
     assert.deepEqual(
-      [mine, before, fresh, distribution].filter(isCiCertificate).map((c) => c.id),
-      ["OLD", "NEW"],
+      [mine, other, own, distribution].filter(isCiCertificate).map((c) => c.id),
+      ["OTHER", "OWN"],
     );
-    const all = [mine, before, fresh, distribution, cert("MAC2", "DEVELOPMENT", "Apple Development: Someone")];
+    assert.equal(normaliseSerial("00:a1:B2"), "A1B2");
+    assert.equal(normaliseSerial("0"), "0");
+    assert.deepEqual(serialsFromPem(KEYCHAIN_PEM + KEYCHAIN_PEM), ["A1B2C3D4E5F6", "A1B2C3D4E5F6"]);
+    assert.deepEqual(serialsFromPem("no certificates here"), []);
     assert.deepEqual(
-      newCiCertificates(all, ["MAC", "OLD", "DIST"]).map((c) => c.id),
-      ["NEW"],
+      ownCiCertificates([mine, other, own, distribution], ["00A1B2C3D4E5F6"]).map((c) => c.id),
+      ["OWN"],
     );
   });
 
-  it("snapshot records the ids and deletes nothing", () => {
-    const out = run(["snapshot", "$DIR/before.json"], [mine, before]);
+  it("revoke-own deletes only the certificate in this runner's keychain", () => {
+    const out = run(["revoke-own", "$DIR/signing.pem"], [mine, other, own, distribution], 0, {
+      "signing.pem": KEYCHAIN_PEM,
+    });
     assert.equal(out.status, 0);
-    assert.deepEqual(JSON.parse(out.snapshot ?? "null"), ["MAC", "OLD"]);
-    assert.deepEqual(out.deletes, []);
+    assert.deepEqual(out.deletes, ["DELETE https://api.appstoreconnect.apple.com/v1/certificates/OWN"]);
   });
 
-  it("revoke-new deletes only the certificate this run made", () => {
-    const dir = mkdtempSync(join(tmpdir(), "asc-before-"));
-    try {
-      writeFileSync(join(dir, "before.json"), JSON.stringify(["MAC", "OLD"]));
-      const out = run(["revoke-new", join(dir, "before.json")], [mine, before, fresh, distribution]);
+  it("revoke-own with an empty or missing keychain export sends no request and warns", () => {
+    for (const files of [{}, { "signing.pem": "" }]) {
+      const out = run(["revoke-own", "$DIR/signing.pem"], [other, own], 0, files);
       assert.equal(out.status, 0);
-      assert.deepEqual(out.deletes, ["DELETE https://api.appstoreconnect.apple.com/v1/certificates/NEW"]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+      assert.deepEqual(out.requests, []);
+      assert.match(out.stdout, /::warning::No development certificate in this runner's keychain/);
     }
   });
 
-  it("revoke-new without a snapshot sends no request and warns", () => {
-    const out = run(["revoke-new", "$DIR/missing.json"], [mine, fresh]);
-    assert.equal(out.status, 0);
-    assert.deepEqual(out.requests, []);
-    assert.match(out.stdout, /::warning::No certificate snapshot/);
-  });
-
   it("prune lists without deleting, and deletes only CI certificates with --apply", () => {
-    const dry = run(["prune"], [mine, before, fresh, distribution]);
+    const dry = run(["prune"], [mine, other, own, distribution]);
     assert.equal(dry.status, 0);
     assert.deepEqual(dry.deletes, []);
-    assert.match(dry.stdout, /would revoke {2}OLD/);
-    const apply = run(["prune", "--apply"], [mine, before, fresh, distribution]);
+    assert.match(dry.stdout, /would revoke {2}OTHER/);
+    const apply = run(["prune", "--apply"], [mine, other, own, distribution]);
     assert.equal(apply.status, 0);
     assert.deepEqual(
       apply.deletes.map((r) => r.split("/").pop()),
-      ["OLD", "NEW"],
+      ["OTHER", "OWN"],
     );
   });
 
   it("retries a busy read and fails once the retries run out", () => {
-    const recovered = run(["prune"], [before], 2);
+    const recovered = run(["prune"], [other], 2);
     assert.equal(recovered.status, 0);
-    assert.match(recovered.stdout, /would revoke {2}OLD/);
-    const failed = run(["prune", "--apply"], [before], 10);
+    assert.match(recovered.stdout, /would revoke {2}OTHER/);
+    const failed = run(["prune", "--apply"], [other], 10);
     assert.equal(failed.status, 1);
     assert.equal(failed.requests.filter((r) => r.startsWith("GET")).length, 4);
     assert.deepEqual(failed.deletes, []);
   });
 
-  it("snapshots before the archive and revokes after every upload, pass or fail", () => {
+  it("revokes in each upload job after the upload, pass or fail", () => {
     const testflight = readFileSync(join(ROOT, ".github", "workflows", "testflight.yml"), "utf8");
-    const snapshot = testflight.indexOf("asc-certificates.mjs snapshot");
     const uploadJob = testflight.indexOf("\n  upload:");
-    const archive = testflight.indexOf("xcodebuild archive");
     const upload = testflight.indexOf("xcodebuild -exportArchive");
-    const revoke = testflight.indexOf("asc-certificates.mjs revoke-new");
-    assert.ok(snapshot > -1, "snapshot step present");
-    // Once, in the plan job, so parallel platform uploads never revoke each other's certificate.
-    assert.ok(snapshot < uploadJob, "snapshot runs in the plan job, before the uploads");
-    assert.ok(snapshot < archive, "snapshot runs before the archive");
-    assert.ok(revoke > upload, "revoke runs after the upload");
-    const job = testflight.slice(testflight.lastIndexOf("\n  certificates:", revoke), revoke);
-    assert.match(job, /needs: \[plan, upload\]/);
-    assert.match(job, /if: always\(\)/);
-    assert.match(job, /continue-on-error: true/);
+    const revoke = testflight.indexOf("asc-certificates.mjs\" revoke-own");
+    const external = testflight.indexOf("\n  external:");
+    assert.ok(revoke > -1, "revoke step present");
+    assert.ok(revoke > upload && upload > uploadJob, "revoke runs after the upload");
+    assert.ok(revoke < external, "revoke runs in the upload job, on the runner that holds the keychain");
+    const step = testflight.slice(testflight.lastIndexOf("- name:", revoke), revoke);
+    assert.match(step, /if: always\(\)/);
+    assert.match(step, /continue-on-error: true/);
+    assert.match(step, /security find-certificate -a -p -c "Apple Development"/);
 
     const prune = readFileSync(join(ROOT, ".github", "workflows", "apple-certificates.yml"), "utf8");
     assert.match(prune, /workflow_dispatch/);
     assert.match(prune, /default: false/);
     assert.match(prune, /set -o pipefail/);
-    // Never revokes the certificate of a TestFlight build that is signing, and
-    // never replaces a pending upload while it waits.
+    // Never revokes the certificate of this repository's TestFlight build that is
+    // signing, and never replaces a pending upload while it waits.
     assert.match(prune, /group: testflight\n {2}cancel-in-progress: false\n {2}queue: max/);
   });
 });

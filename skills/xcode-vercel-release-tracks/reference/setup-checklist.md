@@ -106,6 +106,7 @@ first deployment always goes to production.
       creates it, and Vercel deploys production from it then.
 - [ ] The first `feat`/`fix` merge opens `release(<track>): …` PRs; their checks
       run (if not, the release App is missing).
-- [ ] A main build reached TestFlight internal testers, and its
-      `certificates` job revoked the development certificate it made (or said
-      the run left none).
+- [ ] A main build reached TestFlight internal testers, and its "Revoke this
+      build's development certificate" step revoked one certificate. A warning
+      that the keychain held none means the clean-up is not finding Xcode's
+      certificate on that runner image: check where it went before relying on it.

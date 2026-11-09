@@ -7,7 +7,10 @@ name: Apple certificates
 #
 # testflight.yml revokes its own certificate at the end of every run, so
 # this is for clearing a backlog from before that, or after a run whose clean-up failed.
-# Leave "apply" off first to see the list. Only development certificates whose
+# Leave "apply" off first to see the list. With apply it revokes every CI-made
+# development certificate on the Apple team, including ones other repositories'
+# workflows made, so apply only while no repository on the team is uploading:
+# the concurrency group below covers this repository only. Only development certificates whose
 # name says "Created via API" are revoked; one Xcode made on a person's Mac is
 # kept. Builds already on TestFlight or the App Store are not affected.
 
@@ -22,9 +25,9 @@ on:
 permissions:
   contents: read
 
-# Shares testflight.yml's group so it never revokes the certificate of a build
-# that is signing right now. queue: max, as there, so waiting here never
-# replaces a pending upload.
+# Shares testflight.yml's group so it never revokes the certificate of this
+# repository's build that is signing right now. queue: max, as there, so waiting
+# here never replaces a pending upload.
 concurrency:
   group: testflight
   cancel-in-progress: false

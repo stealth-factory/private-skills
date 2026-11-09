@@ -46,7 +46,7 @@ From [templates/](templates/) into the target repo (`templates/github/` → `.gi
 | `.github/workflows/tag-release.yml` | on merge: tag, GitHub Release, then ship (TestFlight dispatch / production branch) |
 | `.github/workflows/testflight.yml` | main → internal; `<apple>-v*` tag → external + Beta App Review |
 | `.github/scripts/testflight-external.mjs` | App Store Connect API: wait, What to Test, external group, review |
-| `.github/scripts/asc-certificates.mjs` | revokes the Apple Development certificates CI signing leaves behind (snapshot, revoke-new, prune) |
+| `.github/scripts/asc-certificates.mjs` | revokes the Apple Development certificates CI signing leaves behind (revoke-own, prune) |
 | `.github/scripts/asc-certificates.test.mjs` | its tests: `node --test '.github/scripts/*.test.mjs'`, no dependencies |
 | `.github/workflows/apple-certificates.yml` | manual: list, then revoke, every CI-made development certificate |
 | `.github/workflows/neon-refresh-staging.yml` | manual reset of a track's Neon `staging` branch |
@@ -156,14 +156,17 @@ when the monorepo itself does not exist yet.
   builds by version and run start time.
 - **"Your account has reached the maximum number of certificates":** each
   upload signs on a fresh Mac, and Xcode makes a new Apple Development
-  certificate there that nothing can use afterwards. `testflight.yml` snapshots
-  the team's certificates in its plan job and its `certificates` job revokes
-  the ones the run made, pass or fail. A backlog from before that, or a run
-  whose clean-up failed, is cleared with Actions → Apple certificates: run it
-  with *apply* off to see the list, then on. Only certificates named "Created
-  via API" are touched, never one a person's Xcode made, and revoking a
-  development certificate does not affect builds already on TestFlight or the
-  App Store.
+  certificate there that nothing can use afterwards. Each upload job in
+  `testflight.yml` revokes its own at the end, pass or fail, matched by serial
+  number from the runner's keychain, so a parallel platform job or another
+  repository on the same Apple team keeps its certificate. A backlog from
+  before that, or a job whose clean-up warned, is cleared with Actions → Apple
+  certificates: run it with *apply* off to see the list, then on while no
+  repository on the team is uploading (it revokes every CI-made certificate on
+  the team, and its concurrency group covers one repository). Only
+  certificates named "Created via API" are touched, never one a person's Xcode
+  made, and revoking a development certificate does not affect builds already
+  on TestFlight or the App Store.
 - **Beta App Review rejected:** fix, merge, and cut the next patch; a version
   that went out is never re-tagged.
 - **`production/<track>` refused to move:** someone committed to it or `main`

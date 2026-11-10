@@ -57,6 +57,7 @@ while IFS= read -r raw; do
   case "$p" in
     *[[:space:]]*) echo "$track: exclude path '$raw' has a space, which git-cliff cannot match" >&2; exit 1 ;;
     ''|.) echo "$track: exclude path '$raw' covers the whole repository" >&2; exit 1 ;;
+    ..|../*|*/..|*/../*) echo "$track: exclude path '$raw' has a '..' component; spell the path from the repo root" >&2; exit 1 ;;
   esac
   # Git applies an exclude after every positive pathspec, whatever the order,
   # and matches it as a glob (* crosses /), so $p is an unquoted pattern here.

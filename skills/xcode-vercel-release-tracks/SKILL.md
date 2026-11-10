@@ -4,7 +4,7 @@ description: Set up semantic-versioned releases for an Xcode app shipped through
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.4.1"
+  version: "1.4.2"
 ---
 
 # xcode-vercel-release-tracks

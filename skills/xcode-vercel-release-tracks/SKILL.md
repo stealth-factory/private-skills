@@ -88,7 +88,7 @@ when the monorepo itself does not exist yet.
    touches an excluded file and a shipped one still counts, through the
    shipped one. Exclude a folder only when nothing in it ships or feeds the
    build; when tests sit next to source files, list the test files instead.
-   Paths may not contain spaces, be empty or `.`, or cover the track's
+   Exclude paths may not contain spaces or a `..` component, be empty or `.`, or cover the track's
    manifest or changelog, however spelt (`./apps/web`, a glob); the script
    refuses all of these.
 2. **Write `.github/release-tracks.json`** from the template. `ship` is

@@ -2,7 +2,8 @@
 # Everything the release workflows know about a track comes from
 # .github/release-tracks.json: which paths count towards it, where its version
 # lives and how it ships. Tags are <track>-vX.Y.Z; a commit belongs to every
-# track whose paths it touches.
+# track whose paths it touches, not counting files under the track's optional
+# exclude list (tests and fixtures that never ship, say).
 #
 #   release-track.sh list                   track names, as a JSON array
 #   release-track.sh get <track> <field>    one field (ship, kind, manifest, changelog)
@@ -37,6 +38,11 @@ changelog="${changelog#./}"
 # A read loop, not mapfile: macOS still ships bash 3.2.
 paths=()
 while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
+# Paths under the track that never reach a user (its tests, say). A commit
+# that touches only these belongs to no track; one that also touches a
+# shipped file still counts, through that file.
+excludes=()
+while IFS= read -r p; do excludes+=("$p"); done < <(jq -r '.exclude // [] | .[]' <<< "$spec")
 prefix="${track}-v"
 
 # git-cliff wants globs; git log wants pathspecs. Same list, two spellings: a
@@ -47,6 +53,11 @@ cliff_paths=()
 for p in "${paths[@]}"; do
   if [ "$p" = . ]; then cliff_paths=(); break; fi
   cliff_paths+=(--include-path "$p" --include-path "$p/**")
+done
+log_paths=("${paths[@]}")
+for p in ${excludes[@]+"${excludes[@]}"}; do
+  cliff_paths+=(--exclude-path "$p" --exclude-path "$p/**")
+  log_paths+=(":(exclude)$p")
 done
 # ${a[@]+…}: an empty array is "unbound" to bash 3.2 under set -u.
 cliff() { git cliff --tag-pattern "^${prefix}[0-9]" ${cliff_paths[@]+"${cliff_paths[@]}"} "$@"; }
@@ -109,7 +120,7 @@ case "$cmd" in
     # anything marked breaking. Docs and chores still reach the changelog,
     # riding along with the next real change.
     # Whole messages, so a BREAKING CHANGE footer counts as well as a `!`.
-    releasable=$(git log -z "${last}..HEAD" --format=%B -- "${paths[@]}" \
+    releasable=$(git log -z "${last}..HEAD" --format=%B -- "${log_paths[@]}" \
       | perl -0 -ne '$n++ if /\A(?:(?:feat|fix|perf|revert)(?:\(.+\))?!?:|[a-z]+(?:\(.+\))?!:)|^BREAKING[ -]CHANGE:/m; END { print $n + 0 }')
     # A git-cliff failure (a bad cliff.toml, say) fails the run rather than
     # reading as "nothing to release".

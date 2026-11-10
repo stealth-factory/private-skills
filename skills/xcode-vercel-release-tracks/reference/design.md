@@ -17,7 +17,7 @@ Read when a user asks *why*, wants to change the shape, or a repo does not fit.
 ## Versioning
 
 - One `main`. Each deployable target is a **track** with its own semver, changelog and tags `<track>-vX.Y.Z`.
-- A commit belongs to every track whose `paths` it touches (git-cliff `--include-path`, `--tag-pattern`). Nobody assigns tracks; the PR title only says *how much* to bump (`feat` minor, `fix` patch, `!` breaking; below 1.0 breaking bumps minor).
+- A commit belongs to every track whose `paths` it touches, not counting files under the track's `exclude` (git-cliff `--include-path` / `--exclude-path`, `--tag-pattern`; git log `:(exclude)` pathspecs). git-cliff keeps a commit when any changed file matches an include and no exclude, which is the same rule as the pathspecs, so the changelog and the releasable count agree. Nobody assigns tracks; the PR title only says *how much* to bump (`feat` minor, `fix` patch, `!` breaking; below 1.0 breaking bumps minor).
 - Only `feat`, `fix`, `perf`, `revert` and breaking changes start a release. Everything else rides along in the next changelog.
 - Release PR per track, `release(<track>): vX.Y.Z`, rebuilt on every merge to main. Merging it is the release decision. The manifest is bumped in that commit **before** the tag, and the build never edits its source to match a tag.
 - A track's first tag is a **baseline**: it marks what exists, ships nothing and gets no GitHub Release.

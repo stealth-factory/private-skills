@@ -4,7 +4,7 @@ description: Set up semantic-versioned releases for an Xcode app shipped through
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.4.0"
+  version: "1.4.1"
 ---
 
 # xcode-vercel-release-tracks
@@ -88,8 +88,9 @@ when the monorepo itself does not exist yet.
    touches an excluded file and a shipped one still counts, through the
    shipped one. Exclude a folder only when nothing in it ships or feeds the
    build; when tests sit next to source files, list the test files instead.
-   Paths may not contain spaces, and may not cover the track's manifest or
-   changelog (the script refuses both).
+   Paths may not contain spaces, be empty or `.`, or cover the track's
+   manifest or changelog, however spelt (`./apps/web`, a glob); the script
+   refuses all of these.
 2. **Write `.github/release-tracks.json`** from the template. `ship` is
    `testflight`, `vercel` or `none`. `changelog` defaults to
    `<first path>/CHANGELOG.md`. Track names become tag prefixes; keep them short

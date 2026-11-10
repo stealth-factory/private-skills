@@ -48,14 +48,22 @@ while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
 # in the track: git-cliff finds the last release by the commit its tag is on.
 jq -e 'if has("exclude") then .exclude | type == "array" and all(type == "string") else true end' <<< "$spec" >/dev/null \
   || { echo "$track: exclude must be an array of paths" >&2; exit 1; }
+# One spelling per path, so ./apps/web, apps//web and apps/web/ cannot slip
+# past the containment check below: no ./ segments, no doubled or trailing /.
+norm() { printf '%s\n' "$1" | sed -e 's#//*#/#g' -e ':a' -e 's#^\./##' -e 's#/\./#/#' -e 's#/\.$##' -e 'ta' -e 's#/$##'; }
 excludes=()
-while IFS= read -r p; do
+while IFS= read -r raw; do
+  p=$(norm "$raw")
   case "$p" in
-    *[[:space:]]*) echo "$track: exclude path '$p' has a space, which git-cliff cannot match" >&2; exit 1 ;;
+    *[[:space:]]*) echo "$track: exclude path '$raw' has a space, which git-cliff cannot match" >&2; exit 1 ;;
+    ''|.) echo "$track: exclude path '$raw' covers the whole repository" >&2; exit 1 ;;
   esac
-  for keep in "$manifest" "$changelog"; do
+  # Git applies an exclude after every positive pathspec, whatever the order,
+  # and matches it as a glob (* crosses /), so $p is an unquoted pattern here.
+  for keep in "$(norm "$manifest")" "$(norm "$changelog")"; do
+    # shellcheck disable=SC2254
     case "$keep" in
-      "$p"|"$p"/*) echo "$track: exclude path '$p' covers $keep, which every release commit changes" >&2; exit 1 ;;
+      $p|$p/*) echo "$track: exclude path '$raw' covers $keep, which every release commit changes" >&2; exit 1 ;;
     esac
   done
   excludes+=("$p")

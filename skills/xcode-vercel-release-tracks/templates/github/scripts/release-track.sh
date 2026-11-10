@@ -46,7 +46,7 @@ while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
 # its path arguments on them, so the two filters would disagree. Covering
 # the manifest or changelog is refused because a release commit must stay
 # in the track: git-cliff finds the last release by the commit its tag is on.
-jq -e '(.exclude // []) | type == "array" and all(type == "string")' <<< "$spec" >/dev/null \
+jq -e 'if has("exclude") then .exclude | type == "array" and all(type == "string") else true end' <<< "$spec" >/dev/null \
   || { echo "$track: exclude must be an array of paths" >&2; exit 1; }
 excludes=()
 while IFS= read -r p; do

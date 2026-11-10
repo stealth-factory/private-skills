@@ -162,9 +162,10 @@ when the monorepo itself does not exist yet.
   is missing. `release-track.sh next <track>` says which.
 - **A release PR opened for nothing a user gets** (a `fix(ios):` PR opened
   `release(web)`): the commit also touched a file inside that track's `paths`,
-  most often a test. Add its folder to the track's `exclude`. The next merge to
-  main reruns the release workflow, which closes the release PR if nothing
-  releasable is left.
+  most often a test. Add it to the track's `exclude`: its folder when nothing
+  in that folder ships or feeds the build, otherwise the test files themselves.
+  The next merge to main reruns the release workflow, which closes the release
+  PR if nothing releasable is left.
 - **Release PR has no checks:** it was opened with GITHUB_TOKEN; configure the
   release App (`RELEASE_APP_CLIENT_ID`, `RELEASE_APP_PRIVATE_KEY`).
 - **Re-run a TestFlight stage:** Actions → TestFlight → Run workflow at `main`

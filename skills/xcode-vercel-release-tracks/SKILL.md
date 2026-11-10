@@ -4,7 +4,7 @@ description: Set up semantic-versioned releases for an Xcode app shipped through
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
 # xcode-vercel-release-tracks
@@ -78,6 +78,18 @@ when the monorepo itself does not exist yet.
    tracks. Repo-root CI and docs belong to none. **Xcode app only:** `paths`
    is `["."]`, so every commit counts (a `ci:` or `docs:` commit still rides
    along without starting a release), and the changelog is `./CHANGELOG.md`.
+
+   Then list under `exclude` whatever sits inside those paths but never
+   reaches a user, usually the track's test folder (`"exclude":
+   ["apps/web/tests"]`). Without it, a commit for another track that also
+   edits one of these files joins this track too: a `fix(ios):` PR that
+   updates a web test (a common place for repo-wide guards, since `apps/apple`
+   is not a JS package) opens a web release that ships nothing. A commit that
+   touches an excluded file and a shipped one still counts, through the
+   shipped one. Exclude a folder only when nothing in it ships or feeds the
+   build; when tests sit next to source files, list the test files instead.
+   Paths may not contain spaces, and may not cover the track's manifest or
+   changelog (the script refuses both).
 2. **Write `.github/release-tracks.json`** from the template. `ship` is
    `testflight`, `vercel` or `none`. `changelog` defaults to
    `<first path>/CHANGELOG.md`. Track names become tag prefixes; keep them short
@@ -148,6 +160,12 @@ when the monorepo itself does not exist yet.
 - **No release PR appeared:** nothing releasable since the last tag for that
   track (only docs/chores, or commits outside its paths), or the baseline tag
   is missing. `release-track.sh next <track>` says which.
+- **A release PR opened for nothing a user gets** (a `fix(ios):` PR opened
+  `release(web)`): the commit also touched a file inside that track's `paths`,
+  most often a test. Add it to the track's `exclude`: its folder when nothing
+  in that folder ships or feeds the build, otherwise the test files themselves.
+  The next merge to main reruns the release workflow, which closes the release
+  PR if nothing releasable is left.
 - **Release PR has no checks:** it was opened with GITHUB_TOKEN; configure the
   release App (`RELEASE_APP_CLIENT_ID`, `RELEASE_APP_PRIVATE_KEY`).
 - **Re-run a TestFlight stage:** Actions → TestFlight → Run workflow at `main`

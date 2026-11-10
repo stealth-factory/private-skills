@@ -2,7 +2,8 @@
 # Everything the release workflows know about a track comes from
 # .github/release-tracks.json: which paths count towards it, where its version
 # lives and how it ships. Tags are <track>-vX.Y.Z; a commit belongs to every
-# track whose paths it touches.
+# track whose paths it touches, not counting files under the track's optional
+# exclude list (tests and fixtures that never ship, say).
 #
 #   release-track.sh list                   track names, as a JSON array
 #   release-track.sh get <track> <field>    one field (ship, kind, manifest, changelog)
@@ -37,6 +38,28 @@ changelog="${changelog#./}"
 # A read loop, not mapfile: macOS still ships bash 3.2.
 paths=()
 while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
+# Paths under the track that never reach a user (its tests, say). A commit
+# that touches only these belongs to no track; one that also touches a
+# shipped file still counts, through that file.
+# Checked here, not in the loop: a jq error inside <( ) would be swallowed
+# and read as "no exclusions". Spaces are refused because git-cliff splits
+# its path arguments on them, so the two filters would disagree. Covering
+# the manifest or changelog is refused because a release commit must stay
+# in the track: git-cliff finds the last release by the commit its tag is on.
+jq -e 'if has("exclude") then .exclude | type == "array" and all(type == "string") else true end' <<< "$spec" >/dev/null \
+  || { echo "$track: exclude must be an array of paths" >&2; exit 1; }
+excludes=()
+while IFS= read -r p; do
+  case "$p" in
+    *[[:space:]]*) echo "$track: exclude path '$p' has a space, which git-cliff cannot match" >&2; exit 1 ;;
+  esac
+  for keep in "$manifest" "$changelog"; do
+    case "$keep" in
+      "$p"|"$p"/*) echo "$track: exclude path '$p' covers $keep, which every release commit changes" >&2; exit 1 ;;
+    esac
+  done
+  excludes+=("$p")
+done < <(jq -r '.exclude // [] | .[]' <<< "$spec")
 prefix="${track}-v"
 
 # git-cliff wants globs; git log wants pathspecs. Same list, two spellings: a
@@ -47,6 +70,11 @@ cliff_paths=()
 for p in "${paths[@]}"; do
   if [ "$p" = . ]; then cliff_paths=(); break; fi
   cliff_paths+=(--include-path "$p" --include-path "$p/**")
+done
+log_paths=("${paths[@]}")
+for p in ${excludes[@]+"${excludes[@]}"}; do
+  cliff_paths+=(--exclude-path "$p" --exclude-path "$p/**")
+  log_paths+=(":(exclude)$p")
 done
 # ${a[@]+…}: an empty array is "unbound" to bash 3.2 under set -u.
 cliff() { git cliff --tag-pattern "^${prefix}[0-9]" ${cliff_paths[@]+"${cliff_paths[@]}"} "$@"; }
@@ -109,7 +137,7 @@ case "$cmd" in
     # anything marked breaking. Docs and chores still reach the changelog,
     # riding along with the next real change.
     # Whole messages, so a BREAKING CHANGE footer counts as well as a `!`.
-    releasable=$(git log -z "${last}..HEAD" --format=%B -- "${paths[@]}" \
+    releasable=$(git log -z "${last}..HEAD" --format=%B -- "${log_paths[@]}" \
       | perl -0 -ne '$n++ if /\A(?:(?:feat|fix|perf|revert)(?:\(.+\))?!?:|[a-z]+(?:\(.+\))?!:)|^BREAKING[ -]CHANGE:/m; END { print $n + 0 }')
     # A git-cliff failure (a bad cliff.toml, say) fails the run rather than
     # reading as "nothing to release".

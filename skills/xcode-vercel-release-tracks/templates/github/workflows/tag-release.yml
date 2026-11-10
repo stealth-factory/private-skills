@@ -133,15 +133,15 @@ jobs:
           # reviewed in the release PR.
           .github/scripts/release-track.sh notes "$TRACK" "$VERSION" > "$RUNNER_TEMP/notes.md"
           [ -s "$RUNNER_TEMP/notes.md" ] || { echo "no ${VERSION} section in the ${TRACK} changelog" >&2; exit 1; }
-          # Only app-store tracks are marked Latest: that is what people install.
-          latest=false
-          [ "$SHIP" = testflight ] && latest=true
+          # Every release is marked Latest, whatever its track: the badge is
+          # the newest thing shipped. Set explicitly, because GitHub's own
+          # pick compares tag names, and <track>-v tags don't compare cleanly.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "the ${TAG} release exists"
             exit 0
           fi
           gh release create "$TAG" --verify-tag --title "${TRACK} v${VERSION}" \
-            --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
+            --notes-file "$RUNNER_TEMP/notes.md" --latest
 
       - name: Move production/${{ matrix.track }} to the tag
         # Each Vercel project's Production Branch is production/<track>; Vercel's

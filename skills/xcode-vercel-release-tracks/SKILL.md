@@ -86,8 +86,10 @@ when the monorepo itself does not exist yet.
    updates a web test (a common place for repo-wide guards, since `apps/apple`
    is not a JS package) opens a web release that ships nothing. A commit that
    touches an excluded file and a shipped one still counts, through the
-   shipped one. Keep build inputs out of `exclude`: anything the build reads
-   ships.
+   shipped one. Exclude a folder only when nothing in it ships or feeds the
+   build; when tests sit next to source files, list the test files instead.
+   Paths may not contain spaces, and may not cover the track's manifest or
+   changelog (the script refuses both).
 2. **Write `.github/release-tracks.json`** from the template. `ship` is
    `testflight`, `vercel` or `none`. `changelog` defaults to
    `<first path>/CHANGELOG.md`. Track names become tag prefixes; keep them short

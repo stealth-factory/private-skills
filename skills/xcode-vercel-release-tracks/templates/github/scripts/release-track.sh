@@ -41,8 +41,25 @@ while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.paths[]' <<< "$spec")
 # Paths under the track that never reach a user (its tests, say). A commit
 # that touches only these belongs to no track; one that also touches a
 # shipped file still counts, through that file.
+# Checked here, not in the loop: a jq error inside <( ) would be swallowed
+# and read as "no exclusions". Spaces are refused because git-cliff splits
+# its path arguments on them, so the two filters would disagree. Covering
+# the manifest or changelog is refused because a release commit must stay
+# in the track: git-cliff finds the last release by the commit its tag is on.
+jq -e '(.exclude // []) | type == "array" and all(type == "string")' <<< "$spec" >/dev/null \
+  || { echo "$track: exclude must be an array of paths" >&2; exit 1; }
 excludes=()
-while IFS= read -r p; do excludes+=("$p"); done < <(jq -r '.exclude // [] | .[]' <<< "$spec")
+while IFS= read -r p; do
+  case "$p" in
+    *[[:space:]]*) echo "$track: exclude path '$p' has a space, which git-cliff cannot match" >&2; exit 1 ;;
+  esac
+  for keep in "$manifest" "$changelog"; do
+    case "$keep" in
+      "$p"|"$p"/*) echo "$track: exclude path '$p' covers $keep, which every release commit changes" >&2; exit 1 ;;
+    esac
+  done
+  excludes+=("$p")
+done < <(jq -r '.exclude // [] | .[]' <<< "$spec")
 prefix="${track}-v"
 
 # git-cliff wants globs; git log wants pathspecs. Same list, two spellings: a

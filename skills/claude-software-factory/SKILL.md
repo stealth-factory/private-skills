@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.1.2"
+  version: "1.2.0"
 ---
 
 # claude-software-factory
@@ -174,6 +174,43 @@ without the story behind them.
 - **Stated invariants must be literally true.** "X is the only place Y
   happens" in a PR body, with a second place doing Y, is worse than not
   claiming it.
+
+## Apple builds: the Mac first, CI last
+
+iOS, iPadOS and watchOS work is built and tested on a studio Mac **before**
+it is pushed. GitHub's macOS CI is the final check, not the place to debug.
+A macOS runner round trip is a queue plus 30–45 minute jobs, billed at macOS
+rates, and it hands back a log. On the Mac you read the `.xcresult`, fix,
+and re-run one test in minutes.
+
+The developer, for every change that touches the Apple app:
+
+1. **Work in a separate worktree**, never the main checkout. Quit Xcode
+   first: a running Xcode fights `xcodebuild` over the project and crashes.
+2. **Mirror the workflow step by step.** Read the Apple workflow
+   (e.g. `.github/workflows/apple.yml`) and run its exact commands, schemes
+   and destinations, starting with `xcodegen generate`. Cover every job:
+   the build, the package `swift test`, and the UI test suites on each
+   simulator family the matrix uses (iPhone and iPad).
+3. **One dedicated simulator per run.** Create it with
+   `xcrun simctl create ci-local-<name> <device-type> <runtime>`, pass
+   `-destination id=<udid>`, and delete it at the end. Shared simulators
+   carry state between runs and make failures unreproducible.
+4. **DerivedData and result bundles in a temp folder** (`-derivedDataPath`,
+   `-resultBundlePath`), never `~/Library`.
+5. **Match the runtime.** `xcodebuild -version` and
+   `xcrun simctl list runtimes`. If the iOS runtime CI uses is missing, run
+   `xcodebuild -downloadPlatform iOS`.
+6. **On a failure, read the result bundle** (`xcrun xcresulttool get
+   test-results tests --path <bundle>`), fix the cause, re-run that test
+   with `-only-testing:`, and repeat until it is green.
+7. **Push only when it is green on the Mac.** Report the Xcode version, the
+   runtime, pass or fail per job with durations, and the fix commits.
+
+The PM does not flip a PR from draft to ready on a green CI tick alone. The
+developer's report has to name the local run. When CI then fails where the
+Mac passed, treat that as a finding about the runner (a missing runtime, a
+slower simulator, a time limit) and verify it before blaming the code.
 
 ## Talking to the human
 

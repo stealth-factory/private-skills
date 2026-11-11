@@ -4,7 +4,7 @@ description: Set up semantic-versioned releases for an Xcode app shipped through
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.4.2"
+  version: "1.4.3"
 ---
 
 # xcode-vercel-release-tracks
@@ -215,3 +215,7 @@ when the monorepo itself does not exist yet.
   shipped app build reads outside a new `/v<n>` prefix.
 - Pin every action by commit SHA with the version in a comment, as the
   templates do.
+- Build and test the apple track on a Mac before pushing: run the Apple
+  workflow's own commands on a dedicated simulator per run, and treat CI as
+  the final check. The steps are in the sibling skill claude-software-factory
+  ("Apple builds: the Mac first, CI last").

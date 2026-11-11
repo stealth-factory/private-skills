@@ -191,7 +191,8 @@ you push.** CI is the last check, not where you iterate.
   CI is separate from this list: its jobs follow the `runs-on` switch below.
 - **Use your own worktree, never the runner's `_work`.** Run
   `git worktree add --track -b <branch> <repo>/.worktrees/<branch> origin/<branch>`
-  (drop `--track -b <branch>` if the local branch already exists), and leave
+  (or `git worktree add <repo>/.worktrees/<branch> <branch>` if the local
+  branch already exists), and leave
   the checkout a person uses alone.
 - **Mirror the workflow.** Read the job's steps, then run the same commands,
   with the same scheme, test plan and destination type. Run the same project

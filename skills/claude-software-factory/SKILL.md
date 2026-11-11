@@ -186,13 +186,14 @@ and re-run one test in minutes.
 **Which Mac.** Development builds and tests (anything that is not the
 CI/CD pipeline itself) go to the first of these that is available:
 
-1. **mini-5** (`altx-mac-mini-5`), the studio build Mac. Always try it first.
-2. **The user's own Mac** (MacBook, Mac Studio, iMac, …), while mini-5 is
-   offline. Check what the user is on. If it is a Mac, ask them to run the
-   development compiles there until mini-5 is back.
-3. **Another Mac on the tailnet.** If the user is on Linux (or another
-   non-Mac), ask them which other connected Macs they can offer. The
-   tailnet has several besides mini-5.
+1. **The team's build Mac**, the dedicated machine the team keeps for
+   builds. Always try it first.
+2. **The user's own Mac** (MacBook, Mac Studio, iMac, …), while the build
+   Mac is offline. Check what the user is on. If it is a Mac, ask them to run
+   the development compiles there until the build Mac is back.
+3. **Another Mac on the team's private network.** If the user is on Linux
+   (or another non-Mac), ask them which other connected Macs they can offer,
+   for example over a tailnet, VPN or LAN.
 4. **GitHub Actions**, only when none of the above is available. Say that
    you are falling back and why.
 

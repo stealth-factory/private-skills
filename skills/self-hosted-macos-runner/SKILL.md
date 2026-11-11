@@ -140,8 +140,9 @@ together.
 **Simulators.** Scripts that pick "the newest iPhone simulator" by name will
 pick the same device in two concurrent jobs, and the second boot fails or the
 two tests drive one screen. Create one per job and delete it after. Use the
-device type the job needs (an iPad job creates an iPad); this example is an
-iPhone:
+device type and runtime the job needs (an iPad job creates an iPad; pin the
+runtime when the job targets one iOS version). This example is an iPhone on
+the newest installed runtime:
 
 ```bash
 runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(r[-1]["identifier"])')

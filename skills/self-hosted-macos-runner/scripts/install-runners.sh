@@ -87,5 +87,6 @@ for i in $(seq 1 "$count"); do
 done
 
 echo
-echo "Check: Org → Settings → Actions → Runners should list $count idle runner(s)."
+echo "Check: Org → Settings → Actions → Runners should list $count idle runner(s)"
+echo "in group $group. An instance that was already registered is not re-checked here."
 echo "Simulators need a logged-in GUI session: turn on auto-login for $(whoami)."

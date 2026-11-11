@@ -4,16 +4,24 @@ A hosted runner throws its keychain away with the VM. A self-hosted Mac keeps
 everything, so each job builds its own keychain and removes it, even when the
 job fails.
 
-## Certificate (.p12) signing
+## The signing lock
+
+All runner instances on the Mac run as one macOS user, so every signing job,
+from every repo, shares one keychain search list, one login keychain and one
+set of provisioning profiles. A `concurrency:` group does not help: it only
+serialises runs within one repository. Two overlapping jobs can break each
+other. One restores a search list without the other's keychain, or a cleanup
+that revokes "our" development certificates revokes the one the other job is
+still signing with.
+
+So every signing job, with a `.p12` or an API key, holds a machine-wide lock
+from before it touches the keychain until after its last cleanup step
+(including any certificate revocation). The alternative is a separate macOS
+user per runner instance, which costs a logged-in GUI session each.
 
 ```yaml
-- name: Temporary keychain
-  env:
-    P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
-    P12_PASSWORD: ${{ secrets.DIST_CERT_P12_PASSWORD }}
+- name: Take signing lock
   run: |
-    # Machine-wide lock: every runner instance and every repo on this Mac
-    # shares one user keychain search list. Held until "Remove keychain".
     LOCK=/tmp/ci-signing.lock
     got=""
     for _ in $(seq 1 360); do   # wait up to 30 minutes
@@ -23,13 +31,37 @@ job fails.
       sleep 5
     done
     [ -n "$got" ] || { echo "::error::signing lock still held after 30 minutes"; exit 1; }
-    echo "$GITHUB_RUN_ID" > "$LOCK/owner"
+    echo "$GITHUB_RUN_ID-$GITHUB_JOB" > "$LOCK/owner"
     echo "CI_SIGNING_LOCK=$LOCK" >> "$GITHUB_ENV"
+
+# … signing setup, archive, export, upload, cleanup …
+
+- name: Release signing lock      # the LAST step of the job
+  if: always()
+  run: |
+    if [ -n "${CI_SIGNING_LOCK:-}" ] &&
+       [ "$(cat "$CI_SIGNING_LOCK/owner" 2>/dev/null)" = "$GITHUB_RUN_ID-$GITHUB_JOB" ]; then
+      rm -rf "$CI_SIGNING_LOCK"
+    fi
+```
+
+## Certificate (.p12) signing
+
+Between the two lock steps:
+
+```yaml
+- name: Temporary keychain
+  env:
+    P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
+    P12_PASSWORD: ${{ secrets.DIST_CERT_P12_PASSWORD }}
+  run: |
     KEYCHAIN="$RUNNER_TEMP/ci-$GITHUB_RUN_ID.keychain-db"
     KEYCHAIN_PASSWORD=$(uuidgen)
     echo "CI_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
-    # Remember the user's search list so cleanup can put it back.
-    security list-keychains -d user | tr -d '"' | xargs > "$RUNNER_TEMP/keychains.before"
+    # Remember the user's search list, one path per line, so cleanup can
+    # put it back. Paths may contain spaces, so never word-split them.
+    security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' \
+      > "$RUNNER_TEMP/keychains.before"
     security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
     security set-keychain-settings -lut 21600 "$KEYCHAIN"
     security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
@@ -37,7 +69,9 @@ job fails.
     security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
     rm -f "$RUNNER_TEMP/cert.p12"
     security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
-    security list-keychains -d user -s "$KEYCHAIN" $(cat "$RUNNER_TEMP/keychains.before")
+    set -- "$KEYCHAIN"
+    while IFS= read -r k; do [ -n "$k" ] && set -- "$@" "$k"; done < "$RUNNER_TEMP/keychains.before"
+    security list-keychains -d user -s "$@"
 
 # … archive and export, passing OTHER_CODE_SIGN_FLAGS="--keychain $CI_KEYCHAIN" if needed …
 
@@ -45,23 +79,16 @@ job fails.
   if: always()
   run: |
     if [ -f "$RUNNER_TEMP/keychains.before" ]; then
-      security list-keychains -d user -s $(cat "$RUNNER_TEMP/keychains.before")
+      set --
+      while IFS= read -r k; do [ -n "$k" ] && set -- "$@" "$k"; done < "$RUNNER_TEMP/keychains.before"
+      security list-keychains -d user -s "$@"
     fi
     [ -n "${CI_KEYCHAIN:-}" ] && security delete-keychain "$CI_KEYCHAIN" || true
-    # Release the lock only if this job holds it.
-    if [ -n "${CI_SIGNING_LOCK:-}" ] && [ "$(cat "$CI_SIGNING_LOCK/owner" 2>/dev/null)" = "$GITHUB_RUN_ID" ]; then
-      rm -rf "$CI_SIGNING_LOCK"
-    fi
 ```
 
-All runner instances on the Mac run as one macOS user, so they share one
-keychain search list. Two signing jobs at once would each prepend a keychain,
-and the first to finish would restore a list without the other's keychain.
-A `concurrency:` group does not prevent that: it only serialises runs within
-one repository. The lock above covers every repo and instance on the Mac. The
-alternative is a separate macOS user per runner, which costs a GUI login each.
-
 ## App Store Connect API key (automatic signing)
+
+Also between the two lock steps:
 
 ```yaml
 - name: API key
@@ -81,6 +108,12 @@ alternative is a separate macOS user per runner, which costs a GUI login each.
 ```
 
 Automatic signing can create and download certificates and profiles into the
-runner user's keychain and `~/Library/Developer/Xcode/UserData/Provisioning Profiles`.
+runner user's login keychain and
+`~/Library/Developer/Xcode/UserData/Provisioning Profiles`. Those are shared
+by every job on the Mac. A cleanup that revokes the development certificates
+it finds there must run inside the lock, and should revoke only certificates
+this job created (compare against a list taken when the lock was acquired),
+never every matching certificate in the keychain.
+
 On a Mac that also serves as someone's workstation, run the runner as its own
-macOS user so those stay out of the person's account.
+macOS user so these stay out of the person's account.

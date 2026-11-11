@@ -4,7 +4,7 @@ description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions sel
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.1"
+  version: "1.2.2"
 ---
 
 # self-hosted-macos-runner
@@ -102,9 +102,14 @@ blocks a merge:
 jobs:
   build:
     # Repo variable MACOS_RUNS_ON, as JSON: '["self-hosted","macOS","<mac-label>"]'
-    # Unset, or set to '"xcode-27"', and the job goes back to GitHub-hosted.
-    runs-on: ${{ fromJSON(vars.MACOS_RUNS_ON || '"xcode-27"') }}
+    # Unset, and the job goes back to the GitHub-hosted image in the fallback.
+    runs-on: ${{ fromJSON(vars.MACOS_RUNS_ON || '"macos-26"') }}
 ```
+
+The fallback must be a label GitHub-hosted runners actually serve (`macos-26`,
+`macos-latest`, or a larger-runner label your org has defined), never a label
+only your Mac carries, or a down Mac leaves jobs queued instead of falling
+back. Use whatever the workflow ran on before the move.
 
 `vars` is allowed in `runs-on`; `secrets` is not. Changing the variable needs
 no commit, so the switch works mid-incident. Put the same expression on every
@@ -143,8 +148,9 @@ the same way. Snippet: [reference/signing.md](reference/signing.md).
 
 **Concurrency.** A `concurrency:` group only serialises runs within one
 repository. Signing jobs from different repos on the same Mac share one
-keychain search list, so the signing snippet takes a machine-wide lock as
-well.
+keychain search list and one set of certificates, so every signing job holds
+the machine-wide lock in [reference/signing.md](reference/signing.md) from
+setup through cleanup.
 
 ## Develop on the Mac, let CI confirm
 

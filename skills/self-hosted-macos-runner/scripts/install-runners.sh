@@ -14,7 +14,7 @@
 # instances (a higher --count) are registered.
 set -euo pipefail
 
-url="" group="Default" labels="" count=2 root="$HOME/actions-runner"
+url="" group="" labels="" count=2 root="$HOME/actions-runner"
 while [ $# -gt 0 ]; do
   case "$1" in
     --url) url="$2"; shift 2 ;;
@@ -27,6 +27,9 @@ while [ $# -gt 0 ]; do
 done
 : "${RUNNER_TOKEN:?set RUNNER_TOKEN to a registration token}"
 [ -n "$url" ] || { echo "--url is required" >&2; exit 2; }
+# No silent Default: that group is usually shared with every repo in the org,
+# and the group is what limits which repos can run code on this Mac.
+[ -n "$group" ] || { echo "--group is required (a runner group limited to selected private repos)" >&2; exit 2; }
 [ "$(uname -s)" = Darwin ] || { echo "run this on the Mac" >&2; exit 1; }
 [ "$(uname -m)" = arm64 ] || { echo "this script installs the arm64 runner" >&2; exit 1; }
 
@@ -38,8 +41,9 @@ for a in json.load(sys.stdin)["assets"]:
         print(a["browser_download_url"]); break
 ')
 [ -n "$asset" ] || { echo "could not find the macOS arm64 runner download" >&2; exit 1; }
-tarball="$root/$(basename "$asset")"
 mkdir -p "$root"
+root=$(cd "$root" && pwd)   # absolute: the loop below cds into each instance
+tarball="$root/$(basename "$asset")"
 [ -f "$tarball" ] || curl -fsSL -o "$tarball" "$asset"
 
 host=$(scutil --get LocalHostName)

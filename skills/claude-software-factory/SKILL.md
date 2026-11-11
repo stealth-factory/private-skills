@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.0"
+  version: "1.2.1"
 ---
 
 # claude-software-factory
@@ -203,9 +203,11 @@ The developer, for every change that touches the Apple app:
    first: a running Xcode fights `xcodebuild` over the project and crashes.
 2. **Mirror the workflow step by step.** Read the Apple workflow
    (e.g. `.github/workflows/apple.yml`) and run its exact commands, schemes
-   and destinations, starting with `xcodegen generate`. Cover every job:
-   the build, the package `swift test`, and the UI test suites on each
-   simulator family the matrix uses (iPhone and iPad).
+   and destinations, in the same order, and nothing it doesn't run. Run
+   `xcodegen generate` first only if the workflow does; a repo with a
+   committed `.xcodeproj` has no XcodeGen step, so skip it there. Cover
+   every job: the build, the package `swift test`, and the UI test suites
+   on each simulator family the matrix uses (iPhone and iPad).
 3. **One dedicated simulator per run.** Create it with
    `xcrun simctl create ci-local-<name> <device-type> <runtime>`, pass
    `-destination id=<udid>`, and delete it at the end. Shared simulators

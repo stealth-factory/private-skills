@@ -9,8 +9,9 @@
 # The token comes from Org → Settings → Actions → Runners → New self-hosted
 # runner, or POST /orgs/{org}/actions/runners/registration-token. It is read
 # from the environment so it never lands in shell history or a process list
-# of this script's arguments. Re-running is safe: an existing instance is
-# re-registered (--replace) and its service restarted.
+# of this script's arguments. Re-running is safe: an instance that is already
+# configured keeps its registration and only has its service (re)started; new
+# instances (a higher --count) are registered.
 set -euo pipefail
 
 url="" group="Default" labels="" count=2 root="$HOME/actions-runner"
@@ -47,8 +48,14 @@ for i in $(seq 1 "$count"); do
   mkdir -p "$dir"
   cd "$dir"
   if [ -f .runner ]; then
-    ./svc.sh stop >/dev/null 2>&1 || true
-    ./svc.sh uninstall >/dev/null 2>&1 || true
+    # config.sh refuses to run on a configured instance, even with --replace.
+    # Keep the registration and just make sure its service is running. To
+    # re-register (new group, labels or URL), run `./config.sh remove --token
+    # <removal token>` in this directory first, then re-run this script.
+    ./svc.sh install >/dev/null 2>&1 || true
+    ./svc.sh start
+    echo "instance $i: already registered, service started"
+    continue
   fi
   [ -x ./config.sh ] || tar xzf "$tarball"
   ./config.sh --unattended --replace \

@@ -12,6 +12,19 @@ job fails.
     P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
     P12_PASSWORD: ${{ secrets.DIST_CERT_P12_PASSWORD }}
   run: |
+    # Machine-wide lock: every runner instance and every repo on this Mac
+    # shares one user keychain search list. Held until "Remove keychain".
+    LOCK=/tmp/ci-signing.lock
+    got=""
+    for _ in $(seq 1 360); do   # wait up to 30 minutes
+      if mkdir "$LOCK" 2>/dev/null; then got=1; break; fi
+      # Break a lock left by a job that died (older than 2 hours).
+      if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +120 2>/dev/null)" ]; then rm -rf "$LOCK"; fi
+      sleep 5
+    done
+    [ -n "$got" ] || { echo "::error::signing lock still held after 30 minutes"; exit 1; }
+    echo "$GITHUB_RUN_ID" > "$LOCK/owner"
+    echo "CI_SIGNING_LOCK=$LOCK" >> "$GITHUB_ENV"
     KEYCHAIN="$RUNNER_TEMP/ci-$GITHUB_RUN_ID.keychain-db"
     KEYCHAIN_PASSWORD=$(uuidgen)
     echo "CI_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
@@ -35,11 +48,18 @@ job fails.
       security list-keychains -d user -s $(cat "$RUNNER_TEMP/keychains.before")
     fi
     [ -n "${CI_KEYCHAIN:-}" ] && security delete-keychain "$CI_KEYCHAIN" || true
+    # Release the lock only if this job holds it.
+    if [ -n "${CI_SIGNING_LOCK:-}" ] && [ "$(cat "$CI_SIGNING_LOCK/owner" 2>/dev/null)" = "$GITHUB_RUN_ID" ]; then
+      rm -rf "$CI_SIGNING_LOCK"
+    fi
 ```
 
-Two concurrent signing jobs each prepend their own keychain to the same user's
-search list. Keep TestFlight uploads in one `concurrency:` group so only one
-signing job runs at a time.
+All runner instances on the Mac run as one macOS user, so they share one
+keychain search list. Two signing jobs at once would each prepend a keychain,
+and the first to finish would restore a list without the other's keychain.
+A `concurrency:` group does not prevent that: it only serialises runs within
+one repository. The lock above covers every repo and instance on the Mac. The
+alternative is a separate macOS user per runner, which costs a GUI login each.
 
 ## App Store Connect API key (automatic signing)
 

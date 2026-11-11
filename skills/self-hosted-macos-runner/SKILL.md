@@ -4,7 +4,7 @@ description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions sel
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.0"
+  version: "1.2.1"
 ---
 
 # self-hosted-macos-runner
@@ -141,8 +141,10 @@ App Store Connect API key signing (`-allowProvisioningUpdates` plus
 `-authenticationKeyPath`), write the `.p8` under `$RUNNER_TEMP` and delete it
 the same way. Snippet: [reference/signing.md](reference/signing.md).
 
-**Concurrency.** A `concurrency:` group that serialises TestFlight uploads
-still matters; it is not replaced by having one Mac.
+**Concurrency.** A `concurrency:` group only serialises runs within one
+repository. Signing jobs from different repos on the same Mac share one
+keychain search list, so the signing snippet takes a machine-wide lock as
+well.
 
 ## Develop on the Mac, let CI confirm
 

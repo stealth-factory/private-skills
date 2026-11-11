@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.1"
+  version: "1.3.0"
 ---
 
 # claude-software-factory
@@ -178,9 +178,11 @@ without the story behind them.
 ## Apple builds: the Mac first, CI last
 
 iOS, iPadOS and watchOS work is built and tested on a studio Mac **before**
-it is pushed. GitHub's macOS CI is the final check, not the place to debug.
-A macOS runner round trip is a queue plus 30–45 minute jobs, billed at macOS
-rates, and it hands back a log. On the Mac you read the `.xcresult`, fix,
+it is pushed. macOS CI is the final check, not the place to debug. It runs
+only on the team's self-hosted Macs (never GitHub-hosted macOS runners; see
+the `self-hosted-macos-runner` skill), so every CI round trip is a queue
+behind the team's other jobs plus 30–45 minute jobs, and it hands back a
+log. On the Mac you read the `.xcresult`, fix,
 and re-run one test in minutes.
 
 **Which Mac.** Development builds and tests (anything that is not the
@@ -194,8 +196,8 @@ CI/CD pipeline itself) go to the first of these that is available:
 3. **Another Mac on the team's private network.** If the user is on Linux
    (or another non-Mac), ask them which other connected Macs they can offer,
    for example over a tailnet, VPN or LAN.
-4. **GitHub Actions**, only when none of the above is available. Say that
-   you are falling back and why.
+4. **None of the above:** stop and ask the user. Never push to CI to get
+   a compile, and never move a job to a GitHub-hosted macOS runner.
 
 The developer, for every change that touches the Apple app:
 

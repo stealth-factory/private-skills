@@ -26,7 +26,10 @@ defaults:
 jobs:
   check:
     name: Test and build
-    runs-on: macos-26
+    # The team's self-hosted Macs only, never GitHub-hosted macOS runners (self-hosted-macos-runner
+    # skill). MACOS_RUNS_ON (JSON) narrows the labels. Fork PRs never run on them.
+    if: github.event.pull_request.head.repo.fork != true
+    runs-on: ${{ fromJSON(vars.MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]') }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,7 +47,7 @@ jobs:
       # Delete for a committed .xcodeproj.
       - name: Generate Xcode project
         run: |
-          brew install xcodegen
+          command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate
 
       - name: Build for iOS Simulator

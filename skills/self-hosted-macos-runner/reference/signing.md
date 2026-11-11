@@ -135,8 +135,8 @@ without this guard it would clean up the job that does hold the lock:
 false for a job that never got it.
 
 The lock is per Mac. It does not cover a certificate prune run from another
-machine or a hosted runner (for example a scheduled job that revokes old
-certificates for the Apple team). Run a prune only while no signing job is
+machine (for example a scheduled Linux job that revokes old certificates for
+the Apple team). Run a prune only while no signing job is
 running anywhere for that team, and hold new ones until it finishes.
 
 On a Mac that also serves as someone's workstation, run the runner as its own

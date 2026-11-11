@@ -1,10 +1,10 @@
 ---
 name: self-hosted-macos-runner
-description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions self-hosted runner for Xcode CI, simulator UI tests, screenshots and TestFlight uploads, and point the Apple workflows at it instead of GitHub-hosted macOS runners. Use when asked to "use our Mac as the CI runner", "register the Mac mini with GitHub", "stop paying for macOS minutes", "GitHub macOS bill is too high", "run Xcode CI on our own hardware", "self-hosted runner for iOS", or when Apple jobs on a self-hosted Mac collide on simulators, hang on the keychain, queue forever, or fail only when the Mac rebooted. The release workflow itself (versions, tags, TestFlight stages) is the sibling skill xcode-vercel-release-tracks; this skill only decides WHERE the Mac jobs run.
+description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions self-hosted runner for Xcode CI, simulator UI tests, screenshots and TestFlight uploads, and point the Apple workflows at it instead of GitHub-hosted macOS runners. Use when asked to "use our Mac as the CI runner", "register the Mac mini with GitHub", "stop paying for macOS minutes", "GitHub macOS bill is too high", "run Xcode CI on our own hardware", "self-hosted runner for iOS", or when an agent keeps pushing to CI to compile and test iOS code instead of building on the Mac first, or when Apple jobs on a self-hosted Mac collide on simulators, hang on the keychain, queue forever, or fail only when the Mac rebooted. The release workflow itself (versions, tags, TestFlight stages) is the sibling skill xcode-vercel-release-tracks; this skill only decides WHERE the Mac jobs run.
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # self-hosted-macos-runner
@@ -144,6 +144,50 @@ the same way. Snippet: [reference/signing.md](reference/signing.md).
 **Concurrency.** A `concurrency:` group that serialises TestFlight uploads
 still matters; it is not replaced by having one Mac.
 
+## Develop on the Mac, let CI confirm
+
+A runner moves CI off hosted minutes. It does not stop an agent from using CI
+as its compiler: push, wait 20 minutes, read the log, push again. Each loop
+starts every macOS job, and the jobs queue behind one another on your own Mac
+too. Make it a standing rule for iOS work: **build and test on the Mac before
+you push.** CI is the last check, not where you iterate.
+
+- **Reach the Mac directly.** That can be a remote session on it (SSH, or an
+  agent running there) or the Mac acting as a remote Xcode build box. A cloud
+  container cannot run `xcodebuild`, so that kind of agent must hand iOS
+  builds and tests to the Mac.
+- **Use your own worktree, never the runner's `_work`.** Run
+  `git worktree add <repo>/.worktrees/<branch> origin/<branch>`, and leave
+  the checkout a person uses alone.
+- **Mirror the workflow.** Read the job's steps, then run the same commands,
+  with the same scheme, test plan and destination type. Run the same project
+  generator (e.g. `xcodegen generate`) first if CI does.
+- **Isolate the run.** Give it its own simulator (`xcrun simctl create`, then
+  delete it), and put DerivedData under a temp directory with
+  `-derivedDataPath`. Then a local run never collides with a runner job on the
+  same Mac.
+- **Iterate on the failure.** Open the `.xcresult` (`xcrun xcresulttool`),
+  fix the problem, re-run only that test (`-only-testing:`), and push once it
+  passes.
+- **Only then push.** The PR's CI run should be the confirmation.
+
+Trim CI as well, so the final check stays cheap:
+
+- **Run the expensive jobs less.** On draft PRs, run the build and unit tests
+  only. Run UI tests, accessibility audits and screenshots when the PR is
+  marked ready, when a label is added, or on `main`. Use
+  `if: github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'run-ui-tests')`
+  and add `ready_for_review` and `labeled` to the `pull_request` types.
+- **Cancel stale runs**, so pushes in quick succession don't stack up:
+
+  ```yaml
+  concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+  ```
+- **Don't rebuild `main` on every push** to get a "before" screenshot. Cache it
+  per `main` SHA, or capture it on demand.
+
 ## Security rules
 
 - Private repos only, through the runner group. On a public repo, any fork PR
@@ -176,3 +220,5 @@ still matters; it is not replaced by having one Mac.
 - A TestFlight upload from the Mac succeeds, and the job leaves no keychain,
   key file or simulator behind.
 - Setting the repo variable back to hosted runs the same jobs on GitHub.
+- iOS changes are built and tested on the Mac before they are pushed; draft
+  PRs run build and unit tests only.

@@ -1,6 +1,6 @@
 ---
 name: self-hosted-macos-runner
-description: Turn a Mac you already own into a GitHub Actions self-hosted runner and route an org's macOS / iOS / Xcode CI jobs to it instead of GitHub-hosted macOS runners, which bill per minute once the plan's included minutes are spent. Covers getting a registration token, installing one or several runner instances as services, labels and runner groups, switching `runs-on` (with a repo/org variable so you can fall back to hosted), finding every workflow that still asks for hosted macOS, simulator and DerivedData isolation between concurrent jobs, signing-keychain hygiene, keeping the Mac awake, and cutting minutes on draft PRs. Use when asked "use our Mac as the CI runner", "route mac jobs to the Mac mini", "self-hosted runner", "register the Mac with GitHub", "macOS Actions minutes are too expensive", "why is the GitHub bill so high", "runs-on macos", "xcode CI on our own machine", or when hosted macOS cost spikes. Versioning and TestFlight release workflows themselves are the sibling skill xcode-vercel-release-tracks; this skill only decides where those jobs run.
+description: Turn a Mac you already own into a GitHub Actions self-hosted runner and route an org's macOS / iOS / Xcode CI jobs to it instead of GitHub-hosted macOS runners, which bill per minute once the plan's included minutes are spent. Covers getting a registration token, installing one or several runner instances as services, labels and runner groups, switching `runs-on` (with a repo/org variable so you can fall back to hosted), finding every workflow that still asks for hosted macOS, simulator and DerivedData isolation between concurrent jobs, signing-keychain hygiene, keeping the Mac awake, cutting minutes on draft PRs, and having agents build and test on the Mac before they push. Use when asked "use our Mac as the CI runner", "route mac jobs to the Mac mini", "self-hosted runner", "register the Mac with GitHub", "macOS Actions minutes are too expensive", "why is the GitHub bill so high", "runs-on macos", "xcode CI on our own machine", "test on the Mac before pushing", or when hosted macOS cost spikes. Versioning and TestFlight release workflows themselves are the sibling skill xcode-vercel-release-tracks; this skill only decides where those jobs run.
 metadata:
   author: stealth-factory
   co-author: wiiiimm
@@ -217,7 +217,41 @@ Independent of the runner, and still worth it — a single Mac is a queue:
   them `workflow_dispatch` or label-gated.
 - Path filters so web-only commits don't start Apple jobs.
 
-## 8. Cost model
+## 8. Agents develop on the Mac, CI only confirms
+
+Moving CI to the Mac removes the bill; this removes the queue. An agent
+working on an Apple-platform change, on the runner Mac (directly or through
+a remote session), builds and tests **there before it pushes**. Pushing to
+see whether it compiles turns every iteration into a full CI run.
+
+- Work in a git worktree, never the shared checkout, and keep build output
+  out of the repo: `-derivedDataPath "$TMPDIR/<task>/dd"`.
+- Generate the project if the repo uses XcodeGen (`xcodegen generate`), then
+  build for a simulator and run only the tests the change touches first:
+
+  ```bash
+  udid=$(xcrun simctl create "dev-<task>" "<device type>" "<runtime>")
+  xcodebuild build -scheme <Scheme> -destination "id=$udid" -derivedDataPath "$dd"
+  xcodebuild test  -scheme <Scheme> -destination "id=$udid" -derivedDataPath "$dd" \
+    -only-testing:<UITestTarget>/<TestClass>/<testMethod>
+  xcrun simctl delete "$udid"
+  ```
+
+- Screenshots for review: `xcrun simctl io <udid> screenshot <file>.png`, or
+  run the repo's screenshot UI test locally and export attachments with
+  `xcrun xcresulttool export attachments --path <bundle>.xcresult --output-path <dir>`.
+  A device with more than one display (foldables) needs `--display=<id>`;
+  `xcrun simctl io <udid> enumerate` lists them.
+- A headless Mac may have no Simulator.app GUI. Anything that needs its
+  menus (fold/unfold, hardware buttons) needs a UI test or a simulator
+  control tool; `simctl io screenConfig power` does **not** fold a device
+  and can blank its display until the simulator is rebooted.
+- Push when it is green locally, and say in the PR what ran locally. The
+  full matrix on the runner is the final check, not the development loop.
+- Don't run a local job on a simulator a runner instance is using; give
+  local work its own simulator (above) so the two never collide.
+
+## 9. Cost model
 
 - Self-hosted jobs are not charged at the hosted macOS per-minute rate.
   GitHub has announced and changed plans for a small per-minute platform
@@ -242,4 +276,5 @@ Independent of the runner, and still worth it — a single Mac is a queue:
 - [ ] Audit loop shows no remaining hosted macOS jobs (or each is deliberate)
 - [ ] Per-job simulator, `DEVELOPER_DIR`, workspace DerivedData
 - [ ] Draft-PR gating on heavy jobs
+- [ ] Agents build and test on the Mac before pushing
 - [ ] Budget set; next month's usage checked

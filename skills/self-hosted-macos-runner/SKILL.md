@@ -4,7 +4,7 @@ description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions sel
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # self-hosted-macos-runner
@@ -152,10 +152,22 @@ starts every macOS job, and the jobs queue behind one another on your own Mac
 too. Make it a standing rule for iOS work: **build and test on the Mac before
 you push.** CI is the last check, not where you iterate.
 
-- **Reach the Mac directly.** That can be a remote session on it (SSH, or an
+- **Reach a Mac directly.** That can be a remote session on it (SSH, or an
   agent running there) or the Mac acting as a remote Xcode build box. A cloud
   container cannot run `xcodebuild`, so that kind of agent must hand iOS
-  builds and tests to the Mac.
+  builds and tests to a Mac. Pick the Mac in this order:
+  1. **The team's build Mac**, the one this skill registers. Use it whenever
+     it is online.
+  2. **The user's own Mac** (MacBook, Mac Studio and so on), when the build Mac
+     is offline and the user is working on one. Ask them to run the
+     development builds and tests there until the build Mac is back.
+  3. **Another Mac the user can connect**, when the user is on Linux or
+     Windows. Ask whether another Mac is reachable, for example one on the
+     team's private network (a tailnet, VPN or LAN).
+  4. **GitHub-hosted macOS runners**, only when there is no Mac at all. Say
+     that you are falling back, because every minute is billed.
+
+  CI is separate from this list: its jobs follow the `runs-on` switch below.
 - **Use your own worktree, never the runner's `_work`.** Run
   `git worktree add <repo>/.worktrees/<branch> origin/<branch>`, and leave
   the checkout a person uses alone.

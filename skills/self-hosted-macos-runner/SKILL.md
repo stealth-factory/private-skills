@@ -4,7 +4,7 @@ description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions sel
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.3"
+  version: "1.3.0"
 ---
 
 # self-hosted-macos-runner
@@ -60,8 +60,11 @@ mkdir -p ~/actions-runner/1 && cd ~/actions-runner/1
 url=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest \
   | python3 -c 'import json,sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].startswith("actions-runner-osx-arm64-") and a["name"].endswith(".tar.gz")))')
 curl -fsSL "$url" | tar xz
-./config.sh --unattended --replace \
-  --url "https://github.com/<org>" --token "$RUNNER_TOKEN" \
+read -rs RUNNER_TOKEN    # paste the token; nothing lands in shell history
+# The runner reads ACTIONS_RUNNER_INPUT_<ARG> for any argument, so the token
+# never appears in a process list. No --replace: a name clash should fail.
+ACTIONS_RUNNER_INPUT_TOKEN="$RUNNER_TOKEN" ./config.sh --unattended \
+  --url "https://github.com/<org>" \
   --name "$(scutil --get LocalHostName)-1" \
   --runnergroup "<group>" --labels "<mac-label>,xcode-<major>" \
   --work _work
@@ -88,6 +91,12 @@ brew install xcodegen                       # whatever the workflows install per
 sudo pmset -a sleep 0 disksleep 0 autorestart 1   # never sleep; restart after power loss
 ```
 
+`xcode-select -p` must print a path inside `Xcode.app`. If it prints
+`/Library/Developer/CommandLineTools`, every job fails within seconds
+(`xcodebuild requires Xcode`, `unable to find utility "xcresulttool"`,
+`plugin for module 'TestingMacros' not found`). Check it on every Mac you
+add to the group before its runner goes online.
+
 Check: Org → Settings → Actions → Runners lists each instance as **Idle**, or
 `gh api orgs/<org>/actions/runners --jq '.runners[] | [.name,.status,.busy] | @tsv'`.
 
@@ -112,7 +121,9 @@ only your Mac carries, or a down Mac leaves jobs queued instead of falling
 back. Use whatever the workflow ran on before the move.
 
 `vars` is allowed in `runs-on`; `secrets` is not. Changing the variable needs
-no commit, so the switch works mid-incident. Put the same expression on every
+no commit, so the switch works mid-incident. It only affects runs that start
+after the change: a job already queued keeps the labels it asked for, so
+cancel it and re-run it once the variable is set. Put the same expression on every
 macOS job (build, tests, screenshots, accessibility, TestFlight) so they move
 together.
 
@@ -128,7 +139,9 @@ together.
 
 **Simulators.** Scripts that pick "the newest iPhone simulator" by name will
 pick the same device in two concurrent jobs, and the second boot fails or the
-two tests drive one screen. Create one per job and delete it after:
+two tests drive one screen. Create one per job and delete it after. Use the
+device type the job needs (an iPad job creates an iPad); this example is an
+iPhone:
 
 ```bash
 runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(r[-1]["identifier"])')
@@ -177,7 +190,8 @@ you push.** CI is the last check, not where you iterate.
 
   CI is separate from this list: its jobs follow the `runs-on` switch below.
 - **Use your own worktree, never the runner's `_work`.** Run
-  `git worktree add <repo>/.worktrees/<branch> origin/<branch>`, and leave
+  `git worktree add --track -b <branch> <repo>/.worktrees/<branch> origin/<branch>`
+  (drop `--track -b <branch>` if the local branch already exists), and leave
   the checkout a person uses alone.
 - **Mirror the workflow.** Read the job's steps, then run the same commands,
   with the same scheme, test plan and destination type. Run the same project

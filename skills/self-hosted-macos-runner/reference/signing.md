@@ -115,10 +115,29 @@ Also between the two lock steps:
 Automatic signing can create and download certificates and profiles into the
 runner user's login keychain and
 `~/Library/Developer/Xcode/UserData/Provisioning Profiles`. Those are shared
-by every job on the Mac. A cleanup that revokes the development certificates
-it finds there must run inside the lock, and should revoke only certificates
-this job created (compare against a list taken when the lock was acquired),
-never every matching certificate in the keychain.
+by every job on the Mac. Inside the lock, take a baseline of both when the
+lock is acquired; at cleanup, delete the profiles and keychain identities that
+are not in the baseline, and revoke only certificates this job created. Never
+revoke every matching certificate in the keychain.
+
+Every cleanup step that touches shared state (revoking, deleting identities
+or profiles, restoring the search list) runs only when this job holds the
+lock. A job whose lock wait timed out still runs its `if: always()` steps, and
+without this guard it would clean up the job that does hold the lock:
+
+```yaml
+- name: Revoke this job's certificates
+  if: always() && env.CI_SIGNING_LOCK != ''
+  run: …
+```
+
+`CI_SIGNING_LOCK` is only set after the lock is taken, so the condition is
+false for a job that never got it.
+
+The lock is per Mac. It does not cover a certificate prune run from another
+machine or a hosted runner (for example a scheduled job that revokes old
+certificates for the Apple team). Run a prune only while no signing job is
+running anywhere for that team, and hold new ones until it finishes.
 
 On a Mac that also serves as someone's workstation, run the runner as its own
 macOS user so these stay out of the person's account.

@@ -2,19 +2,21 @@
 # Install N GitHub Actions runner instances on this Mac, each as a LaunchAgent.
 #
 # Usage:
-#   RUNNER_TOKEN=<registration token> ./install-runners.sh \
+#   read -rs RUNNER_TOKEN && export RUNNER_TOKEN   # paste; stays out of history
+#   ./install-runners.sh \
 #     --url https://github.com/<org> --group <runner group> \
-#     --labels <mac-label>,xcode-<major> [--count 2] [--root ~/actions-runner]
+#     --labels <mac-label>,xcode-<major> [--count 2] [--root ~/actions-runner] \
+#     [--replace]
 #
 # The token comes from Org → Settings → Actions → Runners → New self-hosted
 # runner, or POST /orgs/{org}/actions/runners/registration-token. It is read
-# from the environment so it never lands in shell history or a process list
-# of this script's arguments. Re-running is safe: an instance that is already
+# from the environment and handed to config.sh as ACTIONS_RUNNER_INPUT_TOKEN,
+# so it never appears in a process list. Re-running is safe: an instance that is already
 # configured keeps its registration and only has its service (re)started; new
 # instances (a higher --count) are registered.
 set -euo pipefail
 
-url="" group="" labels="" count=2 root="$HOME/actions-runner"
+url="" group="" labels="" count=2 root="$HOME/actions-runner" replace=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --url) url="$2"; shift 2 ;;
@@ -22,6 +24,9 @@ while [ $# -gt 0 ]; do
     --labels) labels="$2"; shift 2 ;;
     --count) count="$2"; shift 2 ;;
     --root) root="$2"; shift 2 ;;
+    # Take over a registration of the same name (e.g. after reinstalling into
+    # a new --root). Off by default: it takes the existing runner offline.
+    --replace) replace=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -44,7 +49,12 @@ for a in json.load(sys.stdin)["assets"]:
 mkdir -p "$root"
 root=$(cd "$root" && pwd)   # absolute: the loop below cds into each instance
 tarball="$root/$(basename "$asset")"
-[ -f "$tarball" ] || curl -fsSL -o "$tarball" "$asset"
+if [ ! -f "$tarball" ]; then
+  # Download beside the target and rename on success, so a failed download
+  # never leaves a partial archive that a later run would trust.
+  curl -fsSL -o "$tarball.part" "$asset"
+  mv "$tarball.part" "$tarball"
+fi
 
 host=$(scutil --get LocalHostName)
 for i in $(seq 1 "$count"); do
@@ -56,14 +66,19 @@ for i in $(seq 1 "$count"); do
     # Keep the registration and just make sure its service is running. To
     # re-register (new group, labels or URL), run `./config.sh remove --token
     # <removal token>` in this directory first, then re-run this script.
+    # The existing registration keeps the group and labels it was created
+    # with; --group and --labels do not apply to it. If GitHub no longer lists
+    # it (runners offline for 14 days are removed), the service will start and
+    # never take a job: run `./config.sh remove --token <removal token>` here
+    # (or delete .runner) and re-run this script.
     ./svc.sh install >/dev/null 2>&1 || true
     ./svc.sh start
-    echo "instance $i: already registered, service started"
+    echo "instance $i: already registered (keeps its original group and labels), service started"
     continue
   fi
   [ -x ./config.sh ] || tar xzf "$tarball"
-  ./config.sh --unattended --replace \
-    --url "$url" --token "$RUNNER_TOKEN" \
+  ACTIONS_RUNNER_INPUT_TOKEN="$RUNNER_TOKEN" ./config.sh --unattended \
+    ${replace:+--replace} --url "$url" \
     --name "$host-$i" --runnergroup "$group" \
     ${labels:+--labels "$labels"} --work _work
   ./svc.sh install

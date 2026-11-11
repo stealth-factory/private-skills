@@ -4,7 +4,7 @@ description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions sel
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.2"
+  version: "1.2.3"
 ---
 
 # self-hosted-macos-runner

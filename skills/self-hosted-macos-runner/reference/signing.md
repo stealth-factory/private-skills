@@ -26,11 +26,16 @@ user per runner instance, which costs a logged-in GUI session each.
     got=""
     for _ in $(seq 1 360); do   # wait up to 30 minutes
       if mkdir "$LOCK" 2>/dev/null; then got=1; break; fi
-      # Break a lock left by a job that died (older than 2 hours).
-      if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +120 2>/dev/null)" ]; then rm -rf "$LOCK"; fi
       sleep 5
     done
-    [ -n "$got" ] || { echo "::error::signing lock still held after 30 minutes"; exit 1; }
+    # Never evict by age: a slow upload still holds the keychain. A lock can
+    # only outlive its job if the runner itself died before the always()
+    # release step, so a person clears it after checking nothing is signing.
+    [ -n "$got" ] || {
+      echo "::error::signing lock held by $(cat "$LOCK/owner" 2>/dev/null || echo unknown) for 30+ minutes." \
+           "If that run has finished, remove $LOCK on the Mac and re-run."
+      exit 1
+    }
     echo "$GITHUB_RUN_ID-$GITHUB_JOB" > "$LOCK/owner"
     echo "CI_SIGNING_LOCK=$LOCK" >> "$GITHUB_ENV"
 

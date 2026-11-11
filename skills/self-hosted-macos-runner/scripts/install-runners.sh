@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Install N GitHub Actions runner instances on this Mac, each as a LaunchAgent.
+#
+# Usage:
+#   RUNNER_TOKEN=<registration token> ./install-runners.sh \
+#     --url https://github.com/<org> --group <runner group> \
+#     --labels <mac-label>,xcode-<major> [--count 2] [--root ~/actions-runner]
+#
+# The token comes from Org → Settings → Actions → Runners → New self-hosted
+# runner, or POST /orgs/{org}/actions/runners/registration-token. It is read
+# from the environment so it never lands in shell history or a process list
+# of this script's arguments. Re-running is safe: an existing instance is
+# re-registered (--replace) and its service restarted.
+set -euo pipefail
+
+url="" group="Default" labels="" count=2 root="$HOME/actions-runner"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --url) url="$2"; shift 2 ;;
+    --group) group="$2"; shift 2 ;;
+    --labels) labels="$2"; shift 2 ;;
+    --count) count="$2"; shift 2 ;;
+    --root) root="$2"; shift 2 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+: "${RUNNER_TOKEN:?set RUNNER_TOKEN to a registration token}"
+[ -n "$url" ] || { echo "--url is required" >&2; exit 2; }
+[ "$(uname -s)" = Darwin ] || { echo "run this on the Mac" >&2; exit 1; }
+[ "$(uname -m)" = arm64 ] || { echo "this script installs the arm64 runner" >&2; exit 1; }
+
+asset=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest | python3 -c '
+import json, sys
+for a in json.load(sys.stdin)["assets"]:
+    n = a["name"]
+    if n.startswith("actions-runner-osx-arm64-") and n.endswith(".tar.gz"):
+        print(a["browser_download_url"]); break
+')
+[ -n "$asset" ] || { echo "could not find the macOS arm64 runner download" >&2; exit 1; }
+tarball="$root/$(basename "$asset")"
+mkdir -p "$root"
+[ -f "$tarball" ] || curl -fsSL -o "$tarball" "$asset"
+
+host=$(scutil --get LocalHostName)
+for i in $(seq 1 "$count"); do
+  dir="$root/$i"
+  mkdir -p "$dir"
+  cd "$dir"
+  if [ -f .runner ]; then
+    ./svc.sh stop >/dev/null 2>&1 || true
+    ./svc.sh uninstall >/dev/null 2>&1 || true
+  fi
+  [ -x ./config.sh ] || tar xzf "$tarball"
+  ./config.sh --unattended --replace \
+    --url "$url" --token "$RUNNER_TOKEN" \
+    --name "$host-$i" --runnergroup "$group" \
+    ${labels:+--labels "$labels"} --work _work
+  ./svc.sh install
+  ./svc.sh start
+  echo "instance $i: $host-$i registered and started"
+done
+
+echo
+echo "Check: Org → Settings → Actions → Runners should list $count idle runner(s)."
+echo "Simulators need a logged-in GUI session: turn on auto-login for $(whoami)."

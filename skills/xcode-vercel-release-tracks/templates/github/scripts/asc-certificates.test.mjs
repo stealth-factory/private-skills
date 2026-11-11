@@ -118,7 +118,7 @@ describe("TestFlight certificate clean-up", () => {
       const out = run(["revoke-own", "$DIR/signing.pem"], [other, own], 0, files);
       assert.equal(out.status, 0);
       assert.deepEqual(out.requests, []);
-      assert.match(out.stdout, /::warning::No development certificate in this runner's keychain/);
+      assert.match(out.stdout, /::warning::This job added no development certificate to the Mac's keychain/);
     }
   });
 
@@ -155,9 +155,20 @@ describe("TestFlight certificate clean-up", () => {
     assert.ok(revoke > upload && upload > uploadJob, "revoke runs after the upload");
     assert.ok(revoke < external, "revoke runs in the upload job, on the runner that holds the keychain");
     const step = testflight.slice(testflight.lastIndexOf("- name:", revoke), revoke);
-    assert.match(step, /if: always\(\)/);
+    assert.match(step, /if: always\(\) && env\.CI_SIGNING_LOCK != ''/);
     assert.match(step, /continue-on-error: true/);
-    assert.match(step, /security find-certificate -a -p -c "Apple Development"/);
+    assert.match(step, /security find-certificate -a -Z -p -c "Apple Development"/);
+    assert.match(step, /certs\.before/, "revokes only certificates added since the lock was taken");
+
+    // Self-hosted Macs only: never a GitHub-hosted macOS label, and the signing lock is
+    // taken before the API key is installed and released by the job's last step.
+    const job = testflight.slice(uploadJob, external);
+    assert.doesNotMatch(testflight, /runs-on:\s*macos-/);
+    assert.match(job, /runs-on: \$\{\{ fromJSON\(vars\.MACOS_RUNS_ON \|\| '\["self-hosted","macOS","ARM64"\]'\) \}\}/);
+    const lock = job.indexOf("- name: Take signing lock");
+    assert.ok(lock > -1 && lock < job.indexOf("- name: Install API key"), "lock taken before the key is installed");
+    const steps = job.split("\n      - name: ");
+    assert.match(steps.at(-1), /^Release signing lock\n\s+if: always\(\)/);
 
     const prune = readFileSync(join(ROOT, ".github", "workflows", "apple-certificates.yml"), "utf8");
     assert.match(prune, /workflow_dispatch/);

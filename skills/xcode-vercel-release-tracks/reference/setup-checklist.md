@@ -26,6 +26,11 @@ production URLs.
       first real release creates the branch (the baseline does not), so add
       the App to the bypass list before merging the first release PR.
 - [ ] **Required checks** on `main` include `PR title / lint` and the repo's CI.
+- [ ] **Self-hosted Mac runner** (once per org): the upload job runs only on
+      the team's self-hosted Apple silicon Macs, never on GitHub-hosted macOS
+      runners. The repo must be in the runner group that serves them; set it
+      up with the `self-hosted-macos-runner` skill. `MACOS_RUNS_ON` (JSON)
+      narrows the labels.
 - [ ] Optional: ruleset on `release/*` so only the App pushes them.
 
 ## App Store Connect (apple track)
@@ -109,4 +114,6 @@ first deployment always goes to production.
 - [ ] A main build reached TestFlight internal testers, and its "Revoke this
       build's development certificate" step revoked one certificate. A warning
       that the keychain held none means the clean-up is not finding Xcode's
-      certificate on that runner image: check where it went before relying on it.
+      certificate on that Mac: check where it went before relying on it. The
+      Mac's login keychain and provisioning profiles hold nothing new after
+      the job.

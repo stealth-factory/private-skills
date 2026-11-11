@@ -4,7 +4,7 @@ description: Lay out a pnpm + Turborepo monorepo that deploys each app to its ow
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.0.1"
+  version: "1.1.0"
 ---
 
 # turborepo-vercel-monorepo
@@ -73,7 +73,9 @@ and new ones must be too.
    and Turborepo both build the dependency graph from it.
 6. **CI.** `js.yml` runs `pnpm install --frozen-lockfile` and
    `pnpm turbo run typecheck test build` for JS changes only; `apple.yml` runs
-   `swift test` and unsigned simulator/macOS builds for app changes only.
+   `swift test` and unsigned simulator/macOS builds for app changes only, on
+   the team's self-hosted Macs (never GitHub-hosted macOS runners; see the
+   `self-hosted-macos-runner` skill).
    **Do not make either a required check as they stand:** a workflow skipped
    by its `paths` filter never reports, so a required check from it stays
    pending and blocks every PR that does not touch that side (docs-only PRs

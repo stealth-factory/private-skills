@@ -284,7 +284,6 @@ Re-verify — bots drift.
 | --- | --- |
 | **CodeRabbit** (`coderabbitai`) | Most active: 12 reviews. Its **final check was green (`pass`) with the description `Review rate limited`** — a passing tick on a head it never actually read. Read the description, never the colour. |
 | **Codex** (`chatgpt-codex-connector`) | Reviewed, but posted **no status check at all**, so it never appears in the rollup. Silence from it is ambiguous, not approval. |
-| **Greptile** (`greptile-apps`) | Posted a check while in progress, which was **not** in the final rollup. Do not read a verdict into its absence. |
 | **`cursor`** (`cursoragent`) | **Fixes as well as reviews** — it pushed three commits to the branch, it did not merely comment. |
 
 Two things that PR established and are worth keeping:

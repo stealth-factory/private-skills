@@ -12,7 +12,7 @@ is the single highest-leverage habit in the loop: it stops a review pass
 quietly reverting a decision that took an hour to reach.
 
 ```text
-@cursor /babysit
+@codex review
 
 <one line: what this PR is>
 
@@ -80,6 +80,14 @@ Before adjudicating between two findings, look for the change that satisfies
 both. If you cannot find one, **tell the bot to hold** rather than letting it
 thrash between them, and route the decision to whoever owns the design.
 
+## The roster
+
+**Two reviewers: Codex and CodeRabbit.** CodeRabbit reviews automatically when
+the PR goes ready (see *Controlling CodeRabbit*); Codex reviews when the triage
+comment says `@codex review`. **Copilot is manual only**: request it on a PR
+when the human asks, never by default. `cursor` is no longer in the loop; its
+notes stay below in case a repo still has it.
+
 ## Known bot characteristics
 
 Verify these against your own setup; they drift.
@@ -87,13 +95,42 @@ Verify these against your own setup; they drift.
 | Bot | Behaviour that matters |
 | --- | --- |
 | **CodeRabbit** | Most active, **rate-limits easily**. A green check reading `Review rate limited` means it did **not** review that SHA. Read the check description, not the colour. |
-| **Codex** | Best findings, often late or silent. Worth waiting for on risky changes. |
-| **Greptile** | Gives a confidence score; >3 is usually sound but not conclusive. Bundles findings more than the others. |
-| **cursor** | Fixes as well as reviews (`/babysit`). Will happily undo a deliberate decision if not told. Goes quiet at diminishing returns rather than announcing it — nudge once. |
+| **Codex** | Best findings, often late or silent; posts no status check, so silence is not approval. Worth waiting for on risky changes. Re-trigger with `@codex review`. |
+| **Copilot** | Manual only. Not a required reviewer; do not wait on it unless it was requested. |
+| **cursor** *(retired)* | Fixes as well as reviews (`/babysit`). Will happily undo a deliberate decision if not told. Goes quiet at diminishing returns rather than announcing it — nudge once. |
 
 **A rate-limited or absent review is not an approval.** Say so explicitly when
 you hand a PR to the human. It is better to write "one reviewer, and here is
 what was verified by hand" than to let three green ticks imply three reviews.
+
+## Controlling CodeRabbit
+
+Auto review costs money, so it runs only when asked for. Verify these against
+the repo's `.coderabbit.yaml`; the keywords are this studio's.
+
+| Want | Do |
+| --- | --- |
+| No review (trivial, docs-only, chore) | Put `skip-ci`, `skip-review` or `skip-cr` in the PR **title**. Case-insensitive substring match; skipped silently. |
+| Iterate without burning reviews | Keep the PR in **draft**. CodeRabbit skips drafts by default. |
+| A review | Mark the PR **ready for review**. That also fires the repo's review workflow, so do it once the work is done, not per push. |
+| A review anyway (skipped, or auto review off) | Comment `@coderabbitai review` (incremental) or `@coderabbitai full review` (from scratch). Works whether or not auto review is enabled. |
+
+**Paused PRs.** CodeRabbit pauses incremental reviews after
+`auto_pause_after_reviewed_commits` reviewed commits (default 5), and
+`@coderabbitai pause` / `ignore` pause it by hand. Its last review then
+describes an older SHA. To get one back:
+
+- `@coderabbitai review` — one review of the commits since its last one. If
+  auto-approvals are on and nothing is unresolved, it can approve.
+- `@coderabbitai resume` — turns auto review back on and reviews the commits
+  pushed while paused. Use it when more pushes are coming.
+
+Where branch protection requires CodeRabbit's approval, a paused PR **cannot
+merge** until one of these lands on HEAD. Check the approval's commit, not
+just its presence, before the merge-ready note.
+
+> Provenance: CodeRabbit docs (`configuration/auto-review`,
+> `reference/review-commands`), checked 2026-11. Bots drift — re-check.
 
 ## When the bots are quiet
 
@@ -103,7 +140,7 @@ re-review. Then stop.
 Do **not** push empty commits to provoke a review. If it stays quiet, take the
 PR to the human with what you actually have:
 
-> No review in 90 minutes — CodeRabbit rate-limited, Greptile not reported.
+> No review in 90 minutes — CodeRabbit rate-limited, Codex not reported.
 > All checks green, no unresolved threads, merges clean. The two things that
 > matter were verified by hand: <X> and <Y>.
 

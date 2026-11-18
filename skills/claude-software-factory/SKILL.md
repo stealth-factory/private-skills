@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.1"
+  version: "1.3.0"
 ---
 
 # claude-software-factory
@@ -23,7 +23,7 @@ human ──▶ PM agent ──messages──▶ developer agent ──▶ subag
              │                          │
              │ opens PRs                │ pushes branches
              ▼                          ▼
-        review bots  ◀── @cursor /babysit ──┐
+        review bots  ◀── @codex review ─────┐
              │                              │
              ▼                              │
         human merges ─────────────────────▶ ┘
@@ -70,12 +70,16 @@ would have shipped.
    build, and the traps you already know about (see `reference/handover.md`).
 3. **Developer works.** You do not supervise the middle. Stay out.
 4. **They report done.** Verify the branch yourself: commits, diff stat, and a
-   real merge check (below). Then open the PR.
+   real merge check (below). Then open the PR **as a draft** — CodeRabbit skips
+   drafts, so iterating there costs no review. Mark it ready only when a
+   review is wanted; a trivial or docs-only PR gets a skip keyword in its
+   title instead (`reference/review-bots.md`, *Controlling CodeRabbit*).
 5. **Triage the reviewers before they review** (`reference/review-bots.md`).
    Tell them what is deliberate, so a review pass cannot quietly undo a
    decision.
-6. **Findings come back.** Verify each against HEAD. Route: mechanical → the
-   review bot; design question → the developer; product call → the human.
+6. **Findings come back.** Verify each against HEAD. Route: mechanical and
+   design fixes → the developer (neither current reviewer pushes fixes);
+   product call → the human.
 7. **Declare merge-ready and stop.** Post the evidence and leave it. Do not
    append more caveats, do not offer adjacent work.
 8. **Human merges.** Then: clean up the worktree, check for stacked children
@@ -293,8 +297,9 @@ with `npx skills@1.5.23 add stealth-factory/skills`.
 
 ## Adapting this
 
-The instance this came from used Linear + GitHub + Vercel, with `cursor`,
-CodeRabbit, Codex and Greptile reviewing. **The tracker and the bots are
+The instance this came from used Linear + GitHub + Vercel. The reviewers are
+now **Codex and CodeRabbit**, with Copilot triggered by hand only
+(`reference/review-bots.md`). **The tracker and the bots are
 swappable; the disciplines are not.** What must survive any substitution:
 
 - one agent that writes code, one that verifies and drives it to merge-ready

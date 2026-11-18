@@ -1,10 +1,10 @@
 ---
 name: self-hosted-macos-runner
-description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions self-hosted runner for Xcode CI, simulator UI tests, screenshots and TestFlight uploads, and point the Apple workflows at it instead of GitHub-hosted macOS runners. Use when asked to "use our Mac as the CI runner", "register the Mac mini with GitHub", "stop paying for macOS minutes", "GitHub macOS bill is too high", "run Xcode CI on our own hardware", "self-hosted runner for iOS", or when an agent keeps pushing to CI to compile and test iOS code instead of building on the Mac first, or when Apple jobs on a self-hosted Mac collide on simulators, hang on the keychain, queue forever, or fail only when the Mac rebooted. The release workflow itself (versions, tags, TestFlight stages) is the sibling skill xcode-vercel-release-tracks; this skill only decides WHERE the Mac jobs run.
+description: Turn a Mac you own (a Mac mini build box) into a GitHub Actions self-hosted runner for Xcode CI, simulator UI tests, screenshots and TestFlight uploads, and point the Apple workflows at it. The studio does not use GitHub-hosted macOS runners at all, not even as a fallback. Use when asked to "use our Mac as the CI runner", "register the Mac mini with GitHub", "stop paying for macOS minutes", "GitHub macOS bill is too high", "run Xcode CI on our own hardware", "self-hosted runner for iOS", or when an agent keeps pushing to CI to compile and test iOS code instead of building on the Mac first, or when Apple jobs on a self-hosted Mac collide on simulators, hang on the keychain, queue forever, or fail only when the Mac rebooted. The release workflow itself (versions, tags, TestFlight stages) is the sibling skill xcode-vercel-release-tracks; this skill only decides WHERE the Mac jobs run.
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.3.1"
+  version: "1.4.0"
 ---
 
 # self-hosted-macos-runner
@@ -25,10 +25,10 @@ and then postponed, not cancelled.
 | Question | Default | Why |
 | --- | --- | --- |
 | Org-level or repo-level runner? | **Org**, in a runner group limited to selected repos | one Mac serves several app repos; the group is the access control |
-| Public repos allowed in the group? | **No** | anyone can open a PR on a public repo; a self-hosted runner executes it on your Mac |
+| Public repos allowed in the group? | **No**, unless the repo has Apple CI and no other home | anyone can open a PR on a public repo; a self-hosted runner executes it on your Mac. A public repo in the group must skip fork PRs on every Mac job (see "Public repositories") |
 | How many instances? | 2–3 on an M-series Mac mini with 16 GB+ | one instance runs one job; an iPhone + iPad matrix otherwise queues |
 | Which jobs move? | builds, unit tests, UI tests, screenshots, TestFlight | Linux jobs stay hosted; they are cheap |
-| Fallback when the Mac is off? | a repo variable that switches `runs-on` back to hosted | see "Switchable runs-on" |
+| Fallback when the Mac is off? | **another self-hosted Mac**, never GitHub-hosted | a repo variable switches `runs-on` between Macs; see "Switchable runs-on" |
 
 ## What the human has to do
 
@@ -104,21 +104,24 @@ Check: Org → Settings → Actions → Runners lists each instance as **Idle**,
 
 ### Switchable runs-on
 
-Keep one switch per repo, so a Mac that is off, broken or being upgraded never
-blocks a merge:
+**Never use GitHub-hosted macOS runners** (`macos-*` labels), not even as a
+fallback. Every macOS job, TestFlight and other signing jobs included, runs on
+the team's self-hosted Macs. Keep one switch per repo so a Mac that is off,
+broken or being upgraded can be swapped for another self-hosted Mac without a
+commit:
 
 ```yaml
 jobs:
   build:
-    # Repo variable MACOS_RUNS_ON, as JSON: '["self-hosted","macOS","<mac-label>"]'
-    # Unset, and the job goes back to the GitHub-hosted image in the fallback.
-    runs-on: ${{ fromJSON(vars.MACOS_RUNS_ON || '"macos-26"') }}
+    # Repo variable MACOS_RUNS_ON, as JSON, narrows the labels, e.g.
+    # '["self-hosted","macOS","<mac-label>"]'. Unset: any self-hosted Apple
+    # silicon Mac in the runner group.
+    runs-on: ${{ fromJSON(vars.MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]') }}
 ```
 
-The fallback must be a label GitHub-hosted runners actually serve (`macos-26`,
-`macos-latest`, or a larger-runner label your org has defined), never a label
-only your Mac carries, or a down Mac leaves jobs queued instead of falling
-back. Use whatever the workflow ran on before the move.
+The default and every value of the variable name self-hosted labels only.
+When no Mac is online the jobs queue; that is intended. Bring a Mac back or
+point the variable at another one, rather than paying for hosted minutes.
 
 `vars` is allowed in `runs-on`; `secrets` is not. Changing the variable needs
 no commit, so the switch works mid-incident. It only affects runs that start
@@ -126,6 +129,26 @@ after the change: a job already queued keeps the labels it asked for, so
 cancel it and re-run it once the variable is set. Put the same expression on every
 macOS job (build, tests, screenshots, accessibility, TestFlight) so they move
 together.
+
+**Intel builds.** The runners are Apple silicon. Cross-compile x86_64
+(`swift build --arch x86_64`, `cargo build --target x86_64-apple-darwin`,
+`xcodebuild ARCHS=x86_64`) and run it under Rosetta when it is installed;
+without Rosetta, check the architecture with `lipo -archs` instead of
+running the binary. Do not keep a hosted `macos-*-intel` job for it.
+
+### Public repositories
+
+Self-hosted runners on a public repo execute whatever a PR contains. If a
+public repo needs Apple CI, keep GitHub's org-level restrictions on outside
+contributors on, and make every Mac job skip fork PRs:
+
+```yaml
+    if: github.event.pull_request.head.repo.fork != true
+```
+
+Fork PRs then get no macOS checks; a maintainer re-runs the change from a
+branch in the repo when it needs one. Never trigger Mac jobs from
+`pull_request_target`.
 
 ### Things that are free on a hosted runner and are not here
 
@@ -186,8 +209,9 @@ you push.** CI is the last check, not where you iterate.
   3. **Another Mac the user can connect**, when the user is on Linux or
      Windows. Ask whether another Mac is reachable, for example one on the
      team's private network (a tailnet, VPN or LAN).
-  4. **GitHub-hosted macOS runners**, only when there is no Mac at all. Say
-     that you are falling back, because every minute is billed.
+  4. **No Mac reachable:** stop and ask the user which Mac to use. Never
+     fall back to GitHub-hosted macOS runners, and never push to CI to get
+     a compile.
 
   CI is separate from this list: its jobs follow the `runs-on` switch below.
 - **Use your own worktree, never the runner's `_work`.** Run
@@ -245,8 +269,9 @@ Trim CI as well, so the final check stays cheap:
   `xcrun simctl delete unavailable`, clear `~/Library/Developer/CoreSimulator/Caches`,
   and prune `_work` of each instance now and then.
 - A runner shows **Offline** after a reboot without auto-login, after the
-  user logs out, or after macOS updates. Jobs then queue silently: flip the
-  repo variable to hosted, fix the Mac, flip it back.
+  user logs out, or after macOS updates. Jobs then queue silently: point the
+  repo variable at another self-hosted Mac's labels, or fix the Mac. Never
+  switch to GitHub-hosted macOS runners.
 
 ## Done when
 
@@ -255,6 +280,8 @@ Trim CI as well, so the final check stays cheap:
   parallel up to the instance count without simulator collisions.
 - A TestFlight upload from the Mac succeeds, and the job leaves no keychain,
   key file or simulator behind.
-- Setting the repo variable back to hosted runs the same jobs on GitHub.
+- No workflow asks for a GitHub-hosted macOS label:
+  `grep -rnE 'macos-(latest|[0-9])' .github/workflows` finds nothing.
+- Pointing the repo variable at another Mac's labels runs the same jobs there.
 - iOS changes are built and tested on the Mac before they are pushed; draft
   PRs run build and unit tests only.

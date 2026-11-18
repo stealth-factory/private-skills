@@ -4,7 +4,7 @@ description: Set up semantic-versioned releases for an Xcode app shipped through
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.4.3"
+  version: "1.5.0"
 ---
 
 # xcode-vercel-release-tracks
@@ -44,7 +44,7 @@ From [templates/](templates/) into the target repo (`templates/github/` → `.gi
 | `.github/workflows/pr-title.yml` | PR titles must be Conventional Commits (they become the squash commit) |
 | `.github/workflows/release-pr.yml` | standing `release(<track>): vX.Y.Z` PR per track |
 | `.github/workflows/tag-release.yml` | on merge: tag, GitHub Release, then ship (TestFlight dispatch / production branch) |
-| `.github/workflows/testflight.yml` | main → internal; `<apple>-v*` tag → external + Beta App Review |
+| `.github/workflows/testflight.yml` | main → internal; `<apple>-v*` tag → external + Beta App Review. Uploads run on the team's self-hosted Macs only (`self-hosted-macos-runner` skill), never GitHub-hosted macOS runners |
 | `.github/scripts/testflight-external.mjs` | App Store Connect API: wait, What to Test, external group, review |
 | `.github/scripts/asc-certificates.mjs` | revokes the Apple Development certificates CI signing leaves behind (revoke-own, prune) |
 | `.github/scripts/asc-certificates.test.mjs` | its tests: `node --test '.github/scripts/*.test.mjs'`, no dependencies |
@@ -173,12 +173,13 @@ when the monorepo itself does not exist yet.
   (internal) or at the tag (external). Branch refs are refused by design.
   After a failed external step, re-run just the `external` job: it finds the
   builds by version and run start time.
-- **"Your account has reached the maximum number of certificates":** each
-  upload signs on a fresh Mac, and Xcode makes a new Apple Development
-  certificate there that nothing can use afterwards. Each upload job in
-  `testflight.yml` revokes its own at the end, pass or fail, matched by serial
-  number from the runner's keychain, so a parallel platform job or another
-  repository on the same Apple team keeps its certificate. A backlog from
+- **"Your account has reached the maximum number of certificates":** an
+  upload can make Xcode create a new Apple Development certificate on the
+  self-hosted Mac. Each upload job in `testflight.yml` holds the Mac's signing
+  lock, records the keychain's certificates when it takes the lock, and at the
+  end revokes and deletes only the ones added since, pass or fail, matched by
+  serial number, so a parallel platform job, another repository on the same
+  Apple team, or a certificate already on the Mac keeps its own. A backlog from
   before that, or a job whose clean-up warned, is cleared with Actions → Apple
   certificates: run it with *apply* off to see the list, then on while no
   repository on the team is uploading (it revokes every CI-made certificate on

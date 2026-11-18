@@ -15,6 +15,8 @@ name: TestFlight
 # Optional repository variables: TESTFLIGHT_EXTERNAL_GROUP names the external group (default "Public beta");
 # TESTFLIGHT_LOCALE is the "What to Test" localisation (default en-US);
 # STAGING_API_URL and PRODUCTION_API_URL are the API base URLs baked into internal and tagged builds.
+# The upload job runs only on the team's self-hosted Macs, never on GitHub-hosted macOS runners.
+# MACOS_RUNS_ON (JSON) narrows the runner labels; see the self-hosted-macos-runner skill.
 
 on:
   workflow_dispatch:
@@ -117,7 +119,7 @@ jobs:
     name: Upload ${{ matrix.platform }} build
     needs: plan
     if: needs.plan.outputs.stage != 'skip'
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(vars.MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]') }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -137,6 +139,31 @@ jobs:
           for name in APP_STORE_KEY_ID APP_STORE_ISSUER_ID APP_STORE_KEY_P8_BASE64; do
             test -n "${!name}" || { echo "::error::Repository secret $name is not set. See the release setup checklist."; exit 1; }
           done
+
+      # Every signing job on this Mac, from every repository, shares the runner user's login keychain
+      # and provisioning profiles, so hold a machine-wide lock from here to the last clean-up step. The
+      # certificates and profiles present now are the baseline: clean-up removes only what this job added.
+      - name: Take signing lock
+        run: |
+          LOCK=/tmp/ci-signing.lock
+          owner="$GITHUB_RUN_ID-$GITHUB_JOB-${{ matrix.platform }}"
+          got=""
+          for _ in $(seq 1 360); do
+            if mkdir "$LOCK" 2>/dev/null; then got=1; break; fi
+            sleep 5
+          done
+          # Never evict by age: a slow upload still holds the keychain.
+          [ -n "$got" ] || {
+            echo "::error::Signing lock held by $(cat "$LOCK/owner" 2>/dev/null || echo unknown) for 30+ minutes. If that run has finished, remove $LOCK on the Mac and re-run."
+            exit 1
+          }
+          echo "$owner" > "$LOCK/owner"
+          echo "CI_SIGNING_LOCK=$LOCK" >> "$GITHUB_ENV"
+          echo "CI_SIGNING_OWNER=$owner" >> "$GITHUB_ENV"
+          security find-certificate -a -Z -c "Apple Development" | awk '/^SHA-1 hash:/ { print $3 }' > "$RUNNER_TEMP/certs.before" || true
+          for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
+            [ -d "$dir" ] && find "$dir" -maxdepth 1 -type f
+          done > "$RUNNER_TEMP/profiles.before" || true
 
       - name: Install API key
         env:
@@ -178,7 +205,7 @@ jobs:
       - name: Generate Xcode project
         run: |
           xcodebuild -version
-          brew install xcodegen
+          command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate
 
       - name: Archive
@@ -188,6 +215,7 @@ jobs:
         run: |
           xcodebuild archive -project __XCODE_PROJECT__ -scheme __SCHEME__ -configuration Release \
             -destination 'generic/platform=${{ matrix.platform }}' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$APP_STORE_KEY_PATH" -authenticationKeyID "$APP_STORE_KEY_ID" -authenticationKeyIssuerID "$APP_STORE_ISSUER_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" MARKETING_VERSION="${{ needs.plan.outputs.version }}" \
@@ -208,25 +236,53 @@ jobs:
           version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$RUNNER_TEMP/App.xcarchive/Info.plist")
           echo "Uploaded $version ($BUILD_NUMBER) for ${{ matrix.platform }} (${{ needs.plan.outputs.stage }} testers). It shows in TestFlight after App Store Connect finishes processing." >> "$GITHUB_STEP_SUMMARY"
 
-      # Xcode signed on this fresh Mac by making a new Apple Development certificate ("Created via
-      # API") that nothing can use once the runner is wiped. Apple caps them per team and then
-      # refuses to sign, so revoke it now, pass or fail. It is found by serial number in this
-      # runner's keychain, which only this job used: a parallel platform job, or another repository
-      # building on the same Apple team, keeps its certificate. Never fails the upload; anything
-      # left behind is cleared with apple-certificates.yml.
+      # Xcode may have signed by making a new Apple Development certificate ("Created via API"). Apple
+      # caps them per team and then refuses to sign, so revoke it now, pass or fail. Only certificates
+      # added to the keychain since the lock was taken are this job's: a parallel platform job, another
+      # repository on the same Apple team, and any certificate already on the Mac keep theirs. Never
+      # fails the upload; anything left behind is cleared with apple-certificates.yml. Steps that touch
+      # shared state run only while this job holds the lock.
       - name: Revoke this build's development certificate
-        if: always()
+        if: always() && env.CI_SIGNING_LOCK != ''
         continue-on-error: true
         env:
           APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
           APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
         run: |
-          security find-certificate -a -p -c "Apple Development" > "$RUNNER_TEMP/signing.pem" || true
+          security find-certificate -a -Z -p -c "Apple Development" | awk -v base="$RUNNER_TEMP/certs.before" -v new="$RUNNER_TEMP/certs.new" '
+            BEGIN { while ((getline line < base) > 0) seen[line] = 1 }
+            /^SHA-1 hash:/ { keep = !($3 in seen); if (keep) print $3 > new; next }
+            /-----BEGIN CERTIFICATE-----/ { block = 1 }
+            block && keep { print }
+            /-----END CERTIFICATE-----/ { block = 0 }' > "$RUNNER_TEMP/signing.pem" || true
           node "$GITHUB_WORKSPACE/.github/scripts/asc-certificates.mjs" revoke-own "$RUNNER_TEMP/signing.pem"
 
-      - name: Remove API key
+      - name: Remove this build's certificates and profiles
+        if: always() && env.CI_SIGNING_LOCK != ''
+        run: |
+          if [ -f "$RUNNER_TEMP/certs.new" ]; then
+            while IFS= read -r hash; do
+              security delete-identity -Z "$hash" >/dev/null 2>&1 || security delete-certificate -Z "$hash" >/dev/null 2>&1 || true
+            done < "$RUNNER_TEMP/certs.new"
+          fi
+          for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
+            [ -d "$dir" ] || continue
+            find "$dir" -maxdepth 1 -type f | while IFS= read -r profile; do
+              grep -Fxq "$profile" "$RUNNER_TEMP/profiles.before" 2>/dev/null || rm -f "$profile"
+            done
+          done
+
+      - name: Remove API key and build products
         if: always()
-        run: rm -rf "$RUNNER_TEMP/private_keys"
+        run: rm -rf "$RUNNER_TEMP/private_keys" "$RUNNER_TEMP/DerivedData" "$RUNNER_TEMP/App.xcarchive" "$RUNNER_TEMP/export"
+
+      # The last step of the job.
+      - name: Release signing lock
+        if: always()
+        run: |
+          if [ -n "${CI_SIGNING_LOCK:-}" ] && [ "$(cat "$CI_SIGNING_LOCK/owner" 2>/dev/null)" = "${CI_SIGNING_OWNER:-}" ]; then
+            rm -rf "$CI_SIGNING_LOCK"
+          fi
 
   external:
     name: External testers and Beta App Review

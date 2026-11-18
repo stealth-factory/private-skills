@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 // Revokes the Apple Development certificates that TestFlight CI leaves behind.
 //
-// testflight.yml archives with automatic signing on a fresh GitHub Mac. Xcode
-// makes a new private key there and asks Apple for a new development
-// certificate ("Apple Development: Created via API"). The runner is wiped
-// afterwards, so the certificate stays on the team but can never sign anything
-// again, and once enough pile up Apple refuses to issue another.
+// testflight.yml archives with automatic signing on a self-hosted Mac. Xcode
+// can make a new private key there and ask Apple for a new development
+// certificate ("Apple Development: Created via API"). The job deletes it from
+// the Mac afterwards, so the certificate stays on the team but can never sign
+// anything again, and once enough pile up Apple refuses to issue another.
 //
 // Commands:
 //   revoke-own <pem>     revoke the development certificates whose serial
-//                        numbers are in <pem>: the certificates in this
-//                        runner's keychain, which this job made
+//                        numbers are in <pem>: the certificates this job
+//                        added to the Mac's keychain
 //   prune [--apply]      list every development certificate created via the
 //                        API, and revoke them with --apply
 //
 // revoke-own matches by serial number, so it never touches a certificate that
 // another job, or another repository building on the same Apple team, is still
-// signing with. Telling them apart by time (what existed before the build)
-// is not enough: the workflows' concurrency group only covers one repository.
+// signing with. The workflow's baseline is taken under a machine-wide signing
+// lock, because the concurrency group only covers one repository.
 //
 // Only development certificates whose name says "Created via API" are ever
 // revoked. A certificate Xcode made on a person's Mac carries that person's
@@ -158,7 +158,7 @@ async function main([command, arg]) {
       const serials = existsSync(arg) ? serialsFromPem(readFileSync(arg, "utf8")) : [];
       if (serials.length === 0) {
         console.log(
-          "::warning::No development certificate in this runner's keychain, so nothing was revoked. If the build signed, it may have left one; run the Apple certificates workflow to clear it.",
+          "::warning::This job added no development certificate to the Mac's keychain, so nothing was revoked. If the build signed, it may have left one; run the Apple certificates workflow to clear it.",
         );
         return;
       }

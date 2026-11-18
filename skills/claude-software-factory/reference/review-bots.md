@@ -95,6 +95,35 @@ Verify these against your own setup; they drift.
 you hand a PR to the human. It is better to write "one reviewer, and here is
 what was verified by hand" than to let three green ticks imply three reviews.
 
+## Controlling CodeRabbit
+
+Auto review costs money, so it runs only when asked for. Verify these against
+the repo's `.coderabbit.yaml`; the keywords are this studio's.
+
+| Want | Do |
+| --- | --- |
+| No review (trivial, docs-only, chore) | Put `skip-ci`, `skip-review` or `skip-cr` in the PR **title**. Case-insensitive substring match; skipped silently. |
+| Iterate without burning reviews | Keep the PR in **draft**. CodeRabbit skips drafts by default. |
+| A review | Mark the PR **ready for review**. That also fires the repo's review workflow, so do it once the work is done, not per push. |
+| A review anyway (skipped, or auto review off) | Comment `@coderabbitai review` (incremental) or `@coderabbitai full review` (from scratch). Works whether or not auto review is enabled. |
+
+**Paused PRs.** CodeRabbit pauses incremental reviews after
+`auto_pause_after_reviewed_commits` reviewed commits (default 5), and
+`@coderabbitai pause` / `ignore` pause it by hand. Its last review then
+describes an older SHA. To get one back:
+
+- `@coderabbitai review` — one review of the commits since its last one. If
+  auto-approvals are on and nothing is unresolved, it can approve.
+- `@coderabbitai resume` — turns auto review back on and reviews the commits
+  pushed while paused. Use it when more pushes are coming.
+
+Where branch protection requires CodeRabbit's approval, a paused PR **cannot
+merge** until one of these lands on HEAD. Check the approval's commit, not
+just its presence, before the merge-ready note.
+
+> Provenance: CodeRabbit docs (`configuration/auto-review`,
+> `reference/review-commands`), checked 2026-11. Bots drift — re-check.
+
 ## When the bots are quiet
 
 Nudge once, naming the open findings and asking for a status rather than a

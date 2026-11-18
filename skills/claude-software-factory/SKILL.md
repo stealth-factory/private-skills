@@ -4,7 +4,7 @@ description: Run a software project as a factory of two AI agents — one acting
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.2.1"
+  version: "1.3.0"
 ---
 
 # claude-software-factory
@@ -70,7 +70,10 @@ would have shipped.
    build, and the traps you already know about (see `reference/handover.md`).
 3. **Developer works.** You do not supervise the middle. Stay out.
 4. **They report done.** Verify the branch yourself: commits, diff stat, and a
-   real merge check (below). Then open the PR.
+   real merge check (below). Then open the PR **as a draft** — CodeRabbit skips
+   drafts, so iterating there costs no review. Mark it ready only when a
+   review is wanted; a trivial or docs-only PR gets a skip keyword in its
+   title instead (`reference/review-bots.md`, *Controlling CodeRabbit*).
 5. **Triage the reviewers before they review** (`reference/review-bots.md`).
    Tell them what is deliberate, so a review pass cannot quietly undo a
    decision.

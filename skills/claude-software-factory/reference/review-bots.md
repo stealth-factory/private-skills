@@ -85,8 +85,8 @@ thrash between them, and route the decision to whoever owns the design.
 **Two reviewers: Codex and CodeRabbit.** CodeRabbit reviews automatically when
 the PR goes ready (see *Controlling CodeRabbit*); Codex reviews when the triage
 comment says `@codex review`. **Copilot is manual only**: request it on a PR
-when the human asks, never by default. Greptile and `cursor` are no longer in
-the loop; their notes stay below in case a repo still has them.
+when the human asks, never by default. `cursor` is no longer in the loop; its
+notes stay below in case a repo still has it.
 
 ## Known bot characteristics
 
@@ -97,7 +97,6 @@ Verify these against your own setup; they drift.
 | **CodeRabbit** | Most active, **rate-limits easily**. A green check reading `Review rate limited` means it did **not** review that SHA. Read the check description, not the colour. |
 | **Codex** | Best findings, often late or silent; posts no status check, so silence is not approval. Worth waiting for on risky changes. Re-trigger with `@codex review`. |
 | **Copilot** | Manual only. Not a required reviewer; do not wait on it unless it was requested. |
-| **Greptile** *(retired)* | Gives a confidence score; >3 is usually sound but not conclusive. Bundles findings more than the others. |
 | **cursor** *(retired)* | Fixes as well as reviews (`/babysit`). Will happily undo a deliberate decision if not told. Goes quiet at diminishing returns rather than announcing it — nudge once. |
 
 **A rate-limited or absent review is not an approval.** Say so explicitly when

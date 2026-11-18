@@ -23,7 +23,7 @@ human ──▶ PM agent ──messages──▶ developer agent ──▶ subag
              │                          │
              │ opens PRs                │ pushes branches
              ▼                          ▼
-        review bots  ◀── @cursor /babysit ──┐
+        review bots  ◀── @codex review ─────┐
              │                              │
              ▼                              │
         human merges ─────────────────────▶ ┘
@@ -77,8 +77,9 @@ would have shipped.
 5. **Triage the reviewers before they review** (`reference/review-bots.md`).
    Tell them what is deliberate, so a review pass cannot quietly undo a
    decision.
-6. **Findings come back.** Verify each against HEAD. Route: mechanical → the
-   review bot; design question → the developer; product call → the human.
+6. **Findings come back.** Verify each against HEAD. Route: mechanical and
+   design fixes → the developer (neither current reviewer pushes fixes);
+   product call → the human.
 7. **Declare merge-ready and stop.** Post the evidence and leave it. Do not
    append more caveats, do not offer adjacent work.
 8. **Human merges.** Then: clean up the worktree, check for stacked children
@@ -296,8 +297,9 @@ with `npx skills@1.5.23 add stealth-factory/skills`.
 
 ## Adapting this
 
-The instance this came from used Linear + GitHub + Vercel, with `cursor`,
-CodeRabbit, Codex and Greptile reviewing. **The tracker and the bots are
+The instance this came from used Linear + GitHub + Vercel. The reviewers are
+now **Codex and CodeRabbit**, with Copilot triggered by hand only
+(`reference/review-bots.md`). **The tracker and the bots are
 swappable; the disciplines are not.** What must survive any substitution:
 
 - one agent that writes code, one that verifies and drives it to merge-ready

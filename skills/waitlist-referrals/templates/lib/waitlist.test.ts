@@ -19,11 +19,17 @@ import {
   referrerIdForSignup,
   validateWaitlistInput,
   withShareUrl,
+  type JoinResult,
   type StoredSignup,
   type WaitlistStore,
 } from "./waitlist.ts";
 
 type ReferralRow = { referrerSignupId: string; referredSignupId: string };
+
+function joinedOrThrow(result: JoinResult) {
+  if (!result.ok) throw new Error("signup failed");
+  return result;
+}
 
 function memoryStore(): WaitlistStore & {
   signups: StoredSignup[];
@@ -105,10 +111,12 @@ describe("waitlist validation", () => {
 describe("referral links", () => {
   it("attributes a new signup once and counts it for the referrer", async () => {
     const store = memoryStore();
-    const owner = await joinWaitlist(
-      store,
-      (validateWaitlistInput(valid) as { ok: true; value: never }).value,
-      () => "token-owner-aaaaaa",
+    const owner = joinedOrThrow(
+      await joinWaitlist(
+        store,
+        (validateWaitlistInput(valid) as { ok: true; value: never }).value,
+        () => "token-owner-aaaaaa",
+      ),
     );
     const referred = validateWaitlistInput({
       name: "Grace Hopper",
@@ -133,10 +141,12 @@ describe("referral links", () => {
 
   it("does not add another referral when the same email is submitted again", async () => {
     const store = memoryStore();
-    const owner = await joinWaitlist(
-      store,
-      (validateWaitlistInput(valid) as { ok: true; value: never }).value,
-      () => "token-owner-aaaaaa",
+    const owner = joinedOrThrow(
+      await joinWaitlist(
+        store,
+        (validateWaitlistInput(valid) as { ok: true; value: never }).value,
+        () => "token-owner-aaaaaa",
+      ),
     );
     const referred = validateWaitlistInput({
       name: "Grace Hopper",
@@ -155,7 +165,9 @@ describe("referral links", () => {
     });
     assert.equal(again.ok, true);
     if (!again.ok) return;
-    const duplicate = await joinWaitlist(store, again.value, () => "token-should-not-save");
+    const duplicate = joinedOrThrow(
+      await joinWaitlist(store, again.value, () => "token-should-not-save"),
+    );
 
     assert.equal(duplicate.alreadyJoined, true);
     assert.equal(duplicate.token, "token-grace-aaaaaa");
@@ -215,10 +227,12 @@ describe("referral links", () => {
 
   it("rejects a self referral and keeps the count at zero", async () => {
     const store = memoryStore();
-    const owner = await joinWaitlist(
-      store,
-      (validateWaitlistInput(valid) as { ok: true; value: never }).value,
-      () => "token-owner-aaaaaa",
+    const owner = joinedOrThrow(
+      await joinWaitlist(
+        store,
+        (validateWaitlistInput(valid) as { ok: true; value: never }).value,
+        () => "token-owner-aaaaaa",
+      ),
     );
     const parsed = validateWaitlistInput({
       ...valid,
@@ -226,7 +240,7 @@ describe("referral links", () => {
     });
     assert.equal(parsed.ok, true);
     if (!parsed.ok) return;
-    const result = await joinWaitlist(store, parsed.value, () => "token-new-aaaaaaaa");
+    const result = joinedOrThrow(await joinWaitlist(store, parsed.value, () => "token-new-aaaaaaaa"));
     assert.equal(result.alreadyJoined, true);
     assert.equal(result.token, owner.token);
     assert.equal(store.referrals.length, 0);

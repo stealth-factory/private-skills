@@ -28,7 +28,7 @@ type JoinResult =
       signupId: string;
       shortCode: string | null;
     }
-  | { ok: false };
+  | { ok: false; error?: "invalid" | "unavailable" };
 
 type SignupDetails = {
   name: string;

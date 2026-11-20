@@ -9,10 +9,14 @@ the existing design.
 **Risk.** Anyone can type someone else's address. That address gets the
 thank-you email, and the signup counts toward a referrer.
 
-**Fix.** Add `verified_at timestamptz` to `waitlist_signups`. Make the
-thank-you email a confirmation link
-(`/waitlist/confirm/<opaque referral_code>`), not a share link. Count only
-referrals whose referred signup is verified:
+**Fix.** Add `verified_at timestamptz` to `waitlist_signups`, and a separate
+`confirm_token` (opaque, unique) that `joinWaitlist` never returns. The
+thank-you email is the only place that token appears, as
+`/waitlist/confirm/<confirm_token>`. Do not confirm with `referral_code` or
+the share code. Both a new signup and a duplicate email return `token`, so
+anyone who submits an address they do not control could otherwise open the
+confirm URL without the mailbox. Count only referrals whose referred signup
+is verified:
 
 ```sql
 select count(*) from waitlist_referrals r
@@ -20,9 +24,9 @@ join waitlist_signups s on s.id = r.referred_signup_id
 where r.referrer_signup_id = $1 and s.verified_at is not null;
 ```
 
-Keep the duplicate-email behaviour, but only show the share link once the
-signup is verified, so nobody can retrieve another person's link by typing
-their email.
+Keep the duplicate-email behaviour. Until `verified_at` is set, return no
+share link, so typing someone else's email reveals neither their link nor
+their confirm token.
 
 ## No rate limiting or bot protection
 
@@ -44,10 +48,14 @@ access goes "first to people with more referrals", which gives them a reason
 to try.
 
 **Fix.** Verification (above) removes the cheapest version. For the rest,
-normalise for matching only: strip `+tag`, and remove dots for Gmail. Store
-that in a second unique column, and keep `email_normalized` as the address
-emails go to. Review the top of the referral table by hand before granting
-access. That is a judgement call, not a constraint.
+normalise for matching only where the provider treats the addresses as one
+mailbox. Strip `+tag` for providers that document plus-addressing (Gmail,
+Outlook, Fastmail, and the like), and remove dots for Gmail. Leave every
+other domain exact: `alex@example.org` and `alex+sales@example.org` can be
+different people. Store that form in a second unique column, and keep
+`email_normalized` as the address emails go to. Review the top of the
+referral table by hand before granting access. That is a judgement call, not
+a constraint.
 
 ## No unsubscribe or deletion
 

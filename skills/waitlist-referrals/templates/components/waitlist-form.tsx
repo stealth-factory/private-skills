@@ -44,11 +44,16 @@ function WaitlistAttempt({
 }) {
   const searchParams = useSearchParams();
   const urlReferral = searchParams.get("ref") ?? "";
-  const [draft, setDraft] = useState<WaitlistDraft>(() =>
-    draftForAttempt(urlReferral, ignoreUrlReferral ? 1 : 0),
-  );
-  const referralFromUrl = draftForAttempt(urlReferral, ignoreUrlReferral ? 1 : 0).referral;
+  const seeded = draftForAttempt(urlReferral, ignoreUrlReferral ? 1 : 0);
+  const referralFromUrl = seeded.referral;
+  const [draft, setDraft] = useState<WaitlistDraft>(seeded);
   const [canEditReferral, setCanEditReferral] = useState(referralFromUrl.length === 0);
+  const [trackedReferral, setTrackedReferral] = useState(referralFromUrl);
+  if (referralFromUrl !== trackedReferral) {
+    setTrackedReferral(referralFromUrl);
+    setDraft((current) => ({ ...current, referral: referralFromUrl }));
+    setCanEditReferral(referralFromUrl.length === 0);
+  }
   const [state, action, pending] = useActionState(joinWaitlistAction, null);
   const confirmed = state?.ok && state.shareUrl ? state : null;
 

@@ -27,7 +27,9 @@ export function redact(text) {
 
 // Waitlist history lives in web_drizzle, separate from the builder journal.
 // Statements run one after another, as the builder script does. The SQL is
-// repeat-safe so an overlapping build can apply the same file again.
+// repeat-safe so an overlapping build can apply the same file again. The
+// journal insert ignores a hash the other build already recorded: both can
+// read the journal before either writes, and `hash` is unique.
 export async function applyPendingMigrations(sql, folder = migrationsFolder) {
   await ensureMigrationsTable(sql);
   const appliedRows = await sql`select hash from web_drizzle.__drizzle_migrations`;
@@ -42,11 +44,13 @@ export async function applyPendingMigrations(sql, folder = migrationsFolder) {
       if (text.length === 0) continue;
       await sql.query(text);
     }
-    await sql`
+    const inserted = await sql`
       insert into web_drizzle.__drizzle_migrations ("hash", "created_at")
       values (${migration.hash}, ${migration.folderMillis})
+      on conflict (hash) do nothing
+      returning hash
     `;
-    count += 1;
+    count += inserted.length;
   }
 
   return count;

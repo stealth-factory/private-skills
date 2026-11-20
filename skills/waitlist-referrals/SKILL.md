@@ -4,7 +4,7 @@ description: Add a pre-launch waitlist with referral links to a Next.js App Rout
 metadata:
   author: stealth-factory
   co-author: wiiiimm
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # waitlist-referrals
@@ -54,7 +54,7 @@ these packages: `drizzle-orm`, `drizzle-kit`, `@neondatabase/serverless`,
 | `app/waitlist/thanks/[token]/page.tsx` | The public page for a code: copy button and count. |
 | `components/waitlist.tsx`, `waitlist-form.tsx`, `copy-referral.tsx` | The section, the form (`useActionState`) and the clipboard button with a live-region status. |
 | `db/schema.ts`, `drizzle.config.ts` | Schema with the indexes and checks the store relies on. Migrations are journalled in their own schema. |
-| `scripts/migrate.mjs`, `push-schema.mjs` (+ test) | A migrator that runs before `next build` on Vercel. Unlike `drizzle-kit migrate`, it is safe to repeat. |
+| `scripts/migrate.mjs`, `push-schema.mjs` (+ test) | A migrator that runs before `next build` on Vercel. Unlike `drizzle-kit migrate`, it is safe to repeat, including when two builds record the same hash. The test uses `scripts/fixtures/migrations`, not the app's generated `drizzle/` history. |
 | `lib/*.test.ts` | `node --test` suites with an in-memory store. Keep them; they pin the edge cases below. |
 | `sql-samples/` | Two sample migrations as they shipped. `0001` shows how to backfill short codes onto existing rows. |
 

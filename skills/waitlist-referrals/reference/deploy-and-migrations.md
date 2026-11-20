@@ -36,7 +36,11 @@ in one CTE statement rather than two calls.
   a separate journal, so neither app replays or skips the other's history.
   Rename `web_drizzle` per app.
 - runs each statement in turn and records the hash only after all of them
-  have succeeded.
+  have succeeded. The insert is `on conflict (hash) do nothing returning hash`.
+  Two overlapping builds can both read the journal before either writes the
+  hash. `hash` is unique, so a plain insert aborts the second build even when
+  every statement was safe to repeat. A conflict means the other build already
+  recorded it; this build counts that migration as not newly applied.
 - redacts any `postgres://…` string from errors before printing them.
 
 **Why not `drizzle-kit migrate`?** Two builds can overlap: a preview and a
@@ -82,7 +86,13 @@ application treats a missing short code as "use the long token".
 ## Checks before calling it done
 
 - `pnpm --filter <web> test` runs the two `node --test` suites and the
-  migrator test.
+  migrator test. `scripts/migrate.test.mjs` applies
+  `scripts/fixtures/migrations`, a journal of its own. It does not read the
+  app's `drizzle/` folder. A fresh `drizzle-kit generate` creates
+  `short_referral_code` inside `CREATE TABLE` and has no backfill `UPDATE`,
+  so asserting those statements against the app's history fails on a new
+  project. The backfill shape is pinned on `sql-samples/0001_short_referral_code.sql`
+  and on the fixture the migrator actually runs.
 - On a preview deployment, the build log shows `Applied N drizzle migrations.`
   on the first build and `Applied 0 …` on a rebuild.
 - `select count(*) from waitlist_referrals where referrer_signup_id = referred_signup_id;`

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -50,17 +51,20 @@ describe("readMigrateUrl", () => {
 });
 
 describe("applyPendingMigrations", () => {
-  it("applies each migration once and records it in its own journal schema", async () => {
-    const state = { hashes: [], statements: [], queries: [] };
-    const sql = fakeSql(state);
-    const folder = join(appDir, "drizzle");
-    const migrations = readMigrationFiles({ migrationsFolder: folder });
+  const fixture = join(scriptsDir, "fixtures", "migrations");
 
-    const first = await applyPendingMigrations(sql, folder);
-    const second = await applyPendingMigrations(sql, folder);
+  it("applies each fixture migration once and records it in its own journal schema", async () => {
+    const state = { hashes: [], statements: [], queries: [], staleReads: 0 };
+    const sql = fakeSql(state);
+    const migrations = readMigrationFiles({ migrationsFolder: fixture });
+
+    const first = await applyPendingMigrations(sql, fixture);
+    const ran = state.statements.length;
+    const second = await applyPendingMigrations(sql, fixture);
 
     assert.equal(first, migrations.length);
     assert.equal(second, 0);
+    assert.equal(state.statements.length, ran);
     assert.deepEqual(
       state.hashes,
       migrations.map((migration) => migration.hash),
@@ -71,6 +75,10 @@ describe("applyPendingMigrations", () => {
     );
     assert.equal(
       state.queries.some((query) => query.includes("web_drizzle.__drizzle_migrations")),
+      true,
+    );
+    assert.equal(
+      state.queries.some((query) => /on conflict\s*\(\s*hash\s*\)\s*do nothing/i.test(query)),
       true,
     );
     assert.equal(
@@ -93,6 +101,39 @@ describe("applyPendingMigrations", () => {
           statement.includes("SET short_referral_code = code") &&
           statement.includes("short_referral_code IS NULL"),
       ),
+      true,
+    );
+  });
+
+  it("treats a hash another runner already recorded as already applied", async () => {
+    const migrations = readMigrationFiles({ migrationsFolder: fixture });
+    const state = {
+      hashes: migrations.map((migration) => migration.hash),
+      statements: [],
+      queries: [],
+      staleReads: 1,
+    };
+    const sql = fakeSql(state);
+
+    const applied = await applyPendingMigrations(sql, fixture);
+
+    assert.equal(applied, 0);
+    assert.deepEqual(
+      state.hashes,
+      migrations.map((migration) => migration.hash),
+    );
+    assert.equal(state.statements.length > 0, true);
+  });
+});
+
+describe("short-code backfill sample", () => {
+  it("only fills null short codes and does not rewrite the long token", () => {
+    const sample = readFileSync(join(appDir, "sql-samples", "0001_short_referral_code.sql"), "utf8");
+    assert.equal(sample.includes('ADD COLUMN IF NOT EXISTS "short_referral_code"'), true);
+    assert.equal(/\bSET\s+"?referral_code"?\s*=/i.test(sample), false);
+    assert.equal(
+      sample.includes("SET short_referral_code = code") &&
+        sample.includes("short_referral_code IS NULL"),
       true,
     );
   });
@@ -122,27 +163,38 @@ describe("migrate script", () => {
 });
 
 function fakeSql(state) {
-  const sql = async (strings) => {
+  const sql = async (strings, ...values) => {
     const text = strings.join("?");
     state.queries.push(text);
     if (text.includes("select hash")) {
+      if (state.staleReads > 0) {
+        state.staleReads -= 1;
+        return [];
+      }
       return state.hashes.map((hash) => ({ hash }));
+    }
+    if (text.includes("insert into web_drizzle.__drizzle_migrations")) {
+      const hash = values[0];
+      const conflictSafe = /on conflict\s*\(\s*hash\s*\)\s*do nothing/i.test(text);
+      if (state.hashes.includes(hash)) {
+        if (!conflictSafe) {
+          const error = new Error(
+            'duplicate key value violates unique constraint "__drizzle_migrations_hash_key"',
+          );
+          error.code = "23505";
+          throw error;
+        }
+        return [];
+      }
+      state.hashes.push(hash);
+      return [{ hash }];
     }
     return [];
   };
   sql.query = async (text) => {
     state.statements.push(text);
   };
-  return new Proxy(sql, {
-    apply(target, thisArg, args) {
-      const strings = args[0];
-      const values = args.slice(1);
-      if (strings.join("?").includes("insert into web_drizzle.__drizzle_migrations")) {
-        state.hashes.push(values[0]);
-      }
-      return target.apply(thisArg, args);
-    },
-  });
+  return sql;
 }
 
 function runScript(args) {
